@@ -3,13 +3,12 @@ import { Dialog } from 'primereact/dialog';
 import { DataTable } from 'primereact/datatable';
 import { Column } from 'primereact/column';
 import { Button } from 'primereact/button';
-import { Tag } from 'primereact/tag';
 import { Client } from "@/app/types/clients";
 
-interface ActiveOrdersDialogProps {
+interface QuoteListDialogProps {
     visible: boolean;
     onHide: () => void;
-    orders: any[];
+    quotes: any[];
     clients: Client[];
     loading: boolean;
     totalRecords: number;
@@ -17,14 +16,14 @@ interface ActiveOrdersDialogProps {
     onPage: (event: any) => void;
     expandedRows: any[];
     onRowToggle: (e: any) => void;
-    onQuickPay: (rowData: any) => void;
+    onRetake: (rowData: any) => void;
 }
 
-export const ActiveOrdersDialog = (props: ActiveOrdersDialogProps) => {
+export const QuoteListDialog = (props: QuoteListDialogProps) => {
     const {
-        visible, onHide, orders, clients, loading,
+        visible, onHide, quotes, clients, loading,
         totalRecords, lazyParams, onPage,
-        expandedRows, onRowToggle, onQuickPay
+        expandedRows, onRowToggle, onRetake
     } = props;
 
     const headerTemplate = (data: any, options: any) => {
@@ -42,16 +41,31 @@ export const ActiveOrdersDialog = (props: ActiveOrdersDialogProps) => {
         );
     };
 
+    const renderFolioColumn = (rowData: any) => (
+        <span className="font-bold">#{rowData.idOrden}</span>
+    );
+
+    const renderAccionColumn = (rowData: any) => (
+        <Button
+            label="Retomar"
+            icon="pi pi-arrow-right"
+            size="small"
+            severity="info"
+            onClick={() => onRetake(rowData)}
+            tooltip="Ver detalles y editar"
+        />
+    );
+
     return (
         <Dialog
-            header="Lista de Órdenes en Curso"
+            header="Lista de Cotizaciones"
             visible={visible}
-            style={{ width: '80vw' }}
+            style={{ width: '80vw', minWidth: '350px' }}
             modal
             onHide={onHide}
         >
             <DataTable
-                value={orders}
+                value={quotes}
                 lazy={true}
                 dataKey="idOrden"
                 paginator={true}
@@ -61,7 +75,7 @@ export const ActiveOrdersDialog = (props: ActiveOrdersDialogProps) => {
                 onPage={onPage}
                 rowsPerPageOptions={[5, 10, 20]}
                 loading={loading}
-                emptyMessage="No hay órdenes activas por el momento."
+                emptyMessage="No se encontraron cotizaciones."
                 // Configuración de Agrupamiento
                 rowGroupMode="subheader"
                 groupRowsBy="nombreDisenador"
@@ -73,41 +87,38 @@ export const ActiveOrdersDialog = (props: ActiveOrdersDialogProps) => {
                 expandedRows={expandedRows}
                 onRowToggle={(e) => onRowToggle(e.data)}
             >
-                <Column field="idOrden" header="Folio" style={{ width: '10%' }} className="font-bold" />
-                <Column field="fechaCreacion" header="Fecha" body={(d) => new Date(d.fechaCreacion).toLocaleDateString()} style={{ width: '15%' }} />
+                <Column
+                    field="idOrden"
+                    header="Folio"
+                    style={{ width: '10%' }}
+                    body={renderFolioColumn}
+                />
+                <Column
+                    field="fechaCreacion"
+                    header="Fecha"
+                    style={{ width: '15%' }}
+                    body={(rowData) => new Date(rowData.fechaCreacion).toLocaleDateString()}
+                />
                 <Column
                     header="Cliente"
                     field="idCliente"
-                    body={(d) => clients.find(c => c.id === d.idCliente)?.nombre || 'Público General'}
+                    style={{ width: '30%' }}
+                    body={(d) => {
+                        const c = clients.find(cl => cl.id === d.idCliente);
+                        return c ? c.nombre : 'Público General';
+                    }}
                 />
                 <Column
                     field="montoTotal"
                     header="Total"
                     body={(d) => `$${d.montoTotal.toFixed(2)}`}
-                    className="text-right"
+                    style={{ width: '20%' }}
+                    className="text-right font-medium"
                 />
                 <Column
-                    field="saldoPendiente"
-                    header="Saldo"
-                    className="text-right"
-                    body={(d) => {
-                        const saldo = d.saldoPendiente !== undefined ? d.saldoPendiente : (d.montoTotal - (d.montoPagado || 0));
-                        return (
-                            <span className={saldo > 0.5 ? 'text-red-500 font-bold' : 'text-green-500 font-bold'}>
-                                ${saldo.toFixed(2)}
-                            </span>
-                        );
-                    }}
-                />
-                <Column
-                    header="Pagos"
-                    style={{ textAlign: 'center', width: '15%' }}
-                    body={(data) => {
-                        const saldo = data.saldoPendiente !== undefined ? data.saldoPendiente : (data.montoTotal - (data.montoPagado || 0));
-                        return saldo > 0.5 ?
-                            <Button label="Abonar" icon="pi pi-dollar" severity="success" size="small" onClick={() => onQuickPay(data)} /> :
-                            <Tag severity="success" value="Pagado" icon="pi pi-check" />;
-                    }}
+                    header="Acción"
+                    style={{ width: '15%', textAlign: 'center' }}
+                    body={renderAccionColumn}
                 />
             </DataTable>
         </Dialog>

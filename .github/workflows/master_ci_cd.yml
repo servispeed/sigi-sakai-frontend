@@ -10,7 +10,8 @@ on:
 # Jobs
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    # Usamos tu Self-Hosted Runner local en IONOS
+    runs-on: self-hosted
 
     steps:
       # 1. Obtener el código
@@ -32,6 +33,21 @@ jobs:
       - name: Run Lint
         run: npm run lint
 
-      # 5. Construir la aplicación
+      # 5. Construir la aplicación (React / Next.js)
       - name: Build React/Next.js App
         run: npm run build
+
+      # 6. Empaquetar la aplicación de Electron con electron-builder
+      - name: Build Electron App
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        run: npx electron-builder --win --publish never
+        env:
+          UPDATE_SERVER_URL: ${{ secrets.UPDATE_SERVER_URL }}
+
+      # 7. Copiar las actualizaciones al directorio local del servidor IONOS
+      - name: Copy updates to Server Directory
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        run: |
+          mkdir -p /home/github-runner/sigi-updates-prod
+          cp -rf dist/* /home/github-runner/sigi-updates-prod/
+          chmod -R 755 /home/github-runner/sigi-updates-prod/

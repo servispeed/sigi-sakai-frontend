@@ -3,12 +3,13 @@ import { Dialog } from 'primereact/dialog';
 import { DataTable } from 'primereact/datatable';
 import { Column } from 'primereact/column';
 import { Button } from 'primereact/button';
+import { Tag } from 'primereact/tag';
 import { Client } from "@/app/types/clients";
 
-interface QuoteListDialogProps {
+interface ActiveOrdersDialogProps {
     visible: boolean;
     onHide: () => void;
-    quotes: any[];
+    orders: any[];
     clients: Client[];
     loading: boolean;
     totalRecords: number;
@@ -16,14 +17,14 @@ interface QuoteListDialogProps {
     onPage: (event: any) => void;
     expandedRows: any[];
     onRowToggle: (e: any) => void;
-    onRetake: (rowData: any) => void;
+    onQuickPay: (rowData: any) => void;
 }
 
-export const QuoteListDialog = (props: QuoteListDialogProps) => {
+export const ActiveOrdersDialog = (props: ActiveOrdersDialogProps) => {
     const {
-        visible, onHide, quotes, clients, loading,
+        visible, onHide, orders, clients, loading,
         totalRecords, lazyParams, onPage,
-        expandedRows, onRowToggle, onRetake
+        expandedRows, onRowToggle, onQuickPay
     } = props;
 
     const headerTemplate = (data: any, options: any) => {
@@ -41,16 +42,50 @@ export const QuoteListDialog = (props: QuoteListDialogProps) => {
         );
     };
 
+    const renderSaldoColumn = (rowData: any) => {
+        const saldo = rowData.saldoPendiente !== undefined
+            ? rowData.saldoPendiente
+            : (rowData.montoTotal - (rowData.montoPagado || 0));
+
+        const isPending = saldo > 0.5;
+
+        return (
+            <span className={isPending ? 'text-red-500 font-bold' : 'text-green-500 font-bold'}>
+                ${saldo.toFixed(2)}
+            </span>
+        );
+    };
+
+    const renderPagosColumn = (rowData: any) => {
+        const saldo = rowData.saldoPendiente !== undefined
+            ? rowData.saldoPendiente
+            : (rowData.montoTotal - (rowData.montoPagado || 0));
+
+        if (saldo > 0.5) {
+            return (
+                <Button
+                    label="Abonar"
+                    icon="pi pi-dollar"
+                    severity="success"
+                    size="small"
+                    onClick={() => onQuickPay(rowData)}
+                />
+            );
+        }
+
+        return <Tag severity="success" value="Pagado" icon="pi pi-check" />;
+    };
+
     return (
         <Dialog
-            header="Lista de Cotizaciones"
+            header="Lista de Órdenes en Curso"
             visible={visible}
-            style={{ width: '80vw', minWidth: '350px' }}
+            style={{ width: '80vw' }}
             modal
             onHide={onHide}
         >
             <DataTable
-                value={quotes}
+                value={orders}
                 lazy={true}
                 dataKey="idOrden"
                 paginator={true}
@@ -60,7 +95,7 @@ export const QuoteListDialog = (props: QuoteListDialogProps) => {
                 onPage={onPage}
                 rowsPerPageOptions={[5, 10, 20]}
                 loading={loading}
-                emptyMessage="No se encontraron cotizaciones."
+                emptyMessage="No hay órdenes activas por el momento."
                 // Configuración de Agrupamiento
                 rowGroupMode="subheader"
                 groupRowsBy="nombreDisenador"
@@ -72,47 +107,29 @@ export const QuoteListDialog = (props: QuoteListDialogProps) => {
                 expandedRows={expandedRows}
                 onRowToggle={(e) => onRowToggle(e.data)}
             >
-                <Column
-                    field="idOrden"
-                    header="Folio"
-                    style={{ width: '10%' }}
-                    body={(rowData) => <span className="font-bold">#{rowData.idOrden}</span>}
-                />
-                <Column
-                    field="fechaCreacion"
-                    header="Fecha"
-                    style={{ width: '15%' }}
-                    body={(rowData) => new Date(rowData.fechaCreacion).toLocaleDateString()}
-                />
+                <Column field="idOrden" header="Folio" style={{ width: '10%' }} className="font-bold" />
+                <Column field="fechaCreacion" header="Fecha" body={(d) => new Date(d.fechaCreacion).toLocaleDateString()} style={{ width: '15%' }} />
                 <Column
                     header="Cliente"
                     field="idCliente"
-                    style={{ width: '30%' }}
-                    body={(d) => {
-                        const c = clients.find(cl => cl.id === d.idCliente);
-                        return c ? c.nombre : 'Público General';
-                    }}
+                    body={(d) => clients.find(c => c.id === d.idCliente)?.nombre || 'Público General'}
                 />
                 <Column
                     field="montoTotal"
                     header="Total"
                     body={(d) => `$${d.montoTotal.toFixed(2)}`}
-                    style={{ width: '20%' }}
-                    className="text-right font-medium"
+                    className="text-right"
                 />
                 <Column
-                    header="Acción"
-                    style={{ width: '15%', textAlign: 'center' }}
-                    body={(data) => (
-                        <Button
-                            label="Retomar"
-                            icon="pi pi-arrow-right"
-                            size="small"
-                            severity="info"
-                            onClick={() => onRetake(data)}
-                            tooltip="Ver detalles y editar"
-                        />
-                    )}
+                    field="saldoPendiente"
+                    header="Saldo"
+                    className="text-right"
+                    body={renderSaldoColumn}
+                />
+                <Column
+                    header="Pagos"
+                    style={{ textAlign: 'center', width: '15%' }}
+                    body={renderPagosColumn}
                 />
             </DataTable>
         </Dialog>
