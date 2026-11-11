@@ -1,53 +1,70 @@
 name: master_ci_cd
 
-# Triggers
 on:
   push:
     branches: [ master ]
   pull_request:
     branches: [ master ]
 
-# Jobs
 jobs:
-  build-and-test:
-    # Usamos tu Self-Hosted Runner local en IONOS
-    runs-on: self-hosted
-
+  # ==========================================
+  # FASE 1: CONSTRUCCIÓN EN LA NUBE (ubuntu-latest)
+  # ==========================================
+  build-and-package:
+    runs-on: ubuntu-latest
     steps:
-      # 1. Obtener el código
-      - name: Checkout code
+      - name: Checkout del código
         uses: actions/checkout@v4
 
-      # 2. Configurar Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
-      # 3. Instalar dependencias
-      - name: Install dependencies
+      - name: Instalar dependencias
         run: npm ci
 
-      # 4. Ejecutar pruebas de Linting
-      - name: Run Lint
+      - name: Ejecutar Linting
         run: npm run lint
 
-      # 5. Construir la aplicación (React / Next.js)
-      - name: Build React/Next.js App
+      - name: Construir aplicación React/Next.js
         run: npm run build
 
-      # 6. Empaquetar la aplicación de Electron con electron-builder
-      - name: Build Electron App
+      - name: Empaquetar con Electron Builder
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: npx electron-builder --win --publish never
         env:
           UPDATE_SERVER_URL: ${{ secrets.UPDATE_SERVER_URL }}
 
-      # 7. Copiar las actualizaciones al directorio local del servidor IONOS
-      - name: Copy updates to Server Directory
+      # Sube los ejecutables generados para pasarlos a la Fase 2
+      - name: Subir artefactos de actualización
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-updates
+          path: dist/
+          retention-days: 1 # Solo lo necesitamos para el despliegue
+
+  # ==========================================
+  # FASE 2: DESPLIEGUE EN SERVIDOR IONOS (self-hosted)
+  # ==========================================
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: build-and-package
+    runs-on: self-hosted
+    
+    steps:
+      - name: Crear directorio de actualizaciones si no existe
+        run: mkdir -p /home/github-runner/sigi-updates-prod/
+
+      - name: Descargar artefactos al servidor
+        uses: actions/download-artifact@v4
+        with:
+          name: electron-updates
+          path: /home/github-runner/sigi-updates-prod/
+
+      - name: Ajustar permisos del directorio
         run: |
-          mkdir -p /home/github-runner/sigi-updates-prod
-          cp -rf dist/* /home/github-runner/sigi-updates-prod/
+          chown -R github-runner:github-runner /home/github-runner/sigi-updates-prod/
           chmod -R 755 /home/github-runner/sigi-updates-prod/
