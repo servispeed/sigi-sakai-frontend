@@ -50,7 +50,7 @@ export const UltimaCompraDialog: React.FC<LastPurchaseDialogProps> = ({
         try {
             // 1. Obtener la información de la última compra y el catálogo desde CatalogService en paralelo
             const [ultimaCompra, listaProductos] = await Promise.all([
-                ClientService.getUltimaCompra(id),
+                ClientService.getLastPurchase(id),
                 CatalogService.getProductos().catch(() => [] as Producto[])
             ]);
 

@@ -3,20 +3,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Card } from 'primereact/card';
 import { Button } from 'primereact/button';
-import { FileUpload } from 'primereact/fileupload';
 import { Toast } from 'primereact/toast';
-import { Dialog } from 'primereact/dialog';
-import { InputNumber, InputNumberValueChangeEvent } from 'primereact/inputnumber';
 import Link from 'next/link';
 
 import { comprasService, SolicitudCompra, DetalleSolicitud } from '@/app/service/shopService';
-import { OrderService } from '@/app/service/orderService';
 import { Producto } from '@/app/types/orders';
 import { CatalogService } from '@/app/service/catalogService';
 
-/**
- * Formatea la cantidad solicitada de manera dinámica según la unidad de venta del producto.
- */
+import { PurchaseActionDialog, PurchaseDialogMode, PurchaseSubmitData } from '@/app/components/PurchaseDialog';
+
 const formatCantidadInsumo = (cantidad: number, producto?: Producto): string => {
     if (!producto) {
         return `${cantidad} unidad(es)`;
@@ -25,7 +20,6 @@ const formatCantidadInsumo = (cantidad: number, producto?: Producto): string => 
     const unidadVenta = producto.unidadVenta || '';
     const cantidadPaquete = producto.cantidadPaquete;
 
-    // Si se vende por paquete/millar/lote y tiene una cantidad por paquete mayor a 1
     if (cantidadPaquete && cantidadPaquete > 1) {
         const totalPiezas = cantidad * cantidadPaquete;
         return `${cantidad} ${unidadVenta} (${totalPiezas.toLocaleString()} pzs en total)`;
@@ -47,8 +41,11 @@ const UploadReceiptPage = () => {
     const [solicitud, setSolicitud] = useState<SolicitudCompra | null>(null);
     const [productosMap, setProductosMap] = useState<Map<string, Producto>>(new Map());
     const [loading, setLoading] = useState<boolean>(true);
-    const [showDelayDialog, setShowDelayDialog] = useState<boolean>(false);
-    const [delayDays, setDelayDays] = useState<number | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+    // Estados para controlar el Dialog Inteligente
+    const [dialogVisible, setDialogVisible] = useState<boolean>(false);
+    const [dialogMode, setDialogMode] = useState<PurchaseDialogMode>('SUCCESS');
 
     useEffect(() => {
         const fetchData = async () => {
@@ -60,7 +57,6 @@ const UploadReceiptPage = () => {
             try {
                 setLoading(true);
 
-                // Cargar solicitudes pendientes y catálogo de productos en paralelo
                 const [pendientes, listaProductos] = await Promise.all([
                     comprasService.getPendientes(),
                     CatalogService.getProductos().catch((err) => {
@@ -69,7 +65,6 @@ const UploadReceiptPage = () => {
                     })
                 ]);
 
-                // Mapear productos por ID para búsqueda rápida O(1)
                 const map = new Map<string, Producto>();
                 listaProductos.forEach((prod: any) => {
                     const key = String(prod.idProducto ?? prod.id ?? '');
@@ -79,7 +74,6 @@ const UploadReceiptPage = () => {
                 });
                 setProductosMap(map);
 
-                // Buscar la solicitud correspondiente a esta orden
                 const encontrada = pendientes.find(
                     (s) => String(s.idOrden) === String(orderIdParam)
                 );
@@ -110,52 +104,39 @@ const UploadReceiptPage = () => {
         fetchData();
     }, [orderIdParam]);
 
-    const onCustomUpload = async (event: any) => {
-        const file = event.files[0];
-        if (!file || !orderIdParam) return;
-
-        try {
-            await OrderService.subirArchivo(Number(orderIdParam), file);
-
-            toast.current?.show({
-                severity: 'success',
-                summary: 'Comprobante Subido',
-                detail: 'El recibo se ha registrado exitosamente en la orden.',
-                life: 3000
-            });
-
-            setTimeout(() => {
-                router.push('/');
-            }, 2000);
-        } catch (error) {
-            console.error('Error al subir comprobante:', error);
-            toast.current?.show({
-                severity: 'error',
-                summary: 'Error',
-                detail: 'Ocurrió un error al intentar guardar el archivo.',
-                life: 4000
-            });
-        }
+    const openDialog = (mode: PurchaseDialogMode) => {
+        setDialogMode(mode);
+        setDialogVisible(true);
     };
 
-    const handleNotifyDelay = () => {
-        if (!delayDays) {
-            toast.current?.show({
-                severity: 'warn',
-                summary: 'Días requeridos',
-                detail: 'Ingresa la cantidad de días de retraso estimado.',
-                life: 3000
-            });
-            return;
-        }
+    // Este único manejador procesa las 3 acciones dependiendo del modo del modal
+    const handleDialogSubmit = async (data: PurchaseSubmitData) => {
+        if (!solicitud) return;
+        setIsSubmitting(true);
 
-        toast.current?.show({
-            severity: 'info',
-            summary: 'Notificación Enviada',
-            detail: `Se ha reportado un retraso de ${delayDays} días al equipo.`,
-            life: 3000
-        });
-        setShowDelayDialog(false);
+        try {
+            if (dialogMode === 'SUCCESS') {
+                await comprasService.registrarCompraExitosa(solicitud.idSolicitud, data.costoReal!, data.file!);
+                toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'Compra registrada correctamente.', life: 3000 });
+            }
+            else if (dialogMode === 'DELAY') {
+                await comprasService.registrarCompraAtrasada(solicitud.idSolicitud, data.costoReal!, data.fechaEntrega!, data.file!);
+                toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'Compra y atraso registrados.', life: 3000 });
+            }
+            else if (dialogMode === 'ARRIVAL') {
+                await comprasService.registrarLlegadaAtrasada(solicitud.idSolicitud);
+                toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'Llegada de insumos confirmada.', life: 3000 });
+            }
+
+            setDialogVisible(false);
+            setTimeout(() => router.push('/'), 2000);
+
+        } catch (error) {
+            console.error(error);
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'Ocurrió un error al procesar la solicitud.', life: 4000 });
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -188,7 +169,7 @@ const UploadReceiptPage = () => {
                         <Card className="mb-4 shadow-2">
                             <h2 className="text-xl font-bold m-0 mb-3 flex align-items-center">
                                 <i className="pi pi-list mr-2 text-blue-500"></i>
-                                Detalle de la Solicitud
+                                Detalle de la solicitud
                             </h2>
 
                             <div className="mb-3">
@@ -213,27 +194,14 @@ const UploadReceiptPage = () => {
                                     Materiales / Insumos requeridos:
                                 </div>
 
-                                {solicitud?.detalles &&
-                                    solicitud.detalles.length > 0 ? (
+                                {solicitud?.detalles && solicitud.detalles.length > 0 ? (
                                     <ul className="list-none p-0 m-0 flex flex-column gap-2">
                                         {solicitud.detalles.map(
                                             (det: DetalleSolicitud) => {
-                                                const productIdKey = String(
-                                                    det.idProducto
-                                                );
-                                                const producto =
-                                                    productosMap.get(productIdKey);
-
-                                                const tituloProducto =
-                                                    producto?.nombre ||
-                                                    producto?.descripcion ||
-                                                    `Producto ID #${det.idProducto}`;
-
-                                                const textoCantidad =
-                                                    formatCantidadInsumo(
-                                                        det.cantidad,
-                                                        producto
-                                                    );
+                                                const productIdKey = String(det.idProducto);
+                                                const producto = productosMap.get(productIdKey);
+                                                const tituloProducto = producto?.nombre || producto?.descripcion || `Producto ID #${det.idProducto}`;
+                                                const textoCantidad = formatCantidadInsumo(det.cantidad, producto);
 
                                                 return (
                                                     <li
@@ -251,9 +219,7 @@ const UploadReceiptPage = () => {
                                                                 {producto?.formatoTamano && (
                                                                     <span className="text-xs text-500">
                                                                         Formato:{' '}
-                                                                        {
-                                                                            producto.formatoTamano
-                                                                        }
+                                                                        {producto.formatoTamano}
                                                                     </span>
                                                                 )}
                                                             </div>
@@ -277,105 +243,56 @@ const UploadReceiptPage = () => {
                             </div>
                         </Card>
 
-                        {/* Zona de Carga de Comprobante */}
-                        <Card className="shadow-4 border-top-3 border-red-500 bg-red-50 relative">
-                            <Button
-                                icon="pi pi-bell"
-                                className="p-button-rounded p-button-danger p-button-text absolute top-0 right-0 mt-3 mr-3"
-                                tooltip="Notificar retraso (Días)"
-                                onClick={() => setShowDelayDialog(true)}
-                            />
+                        {/* PANEL DINÁMICO DE ACCIONES */}
+                        <Card className={`shadow-4 border-top-3 ${solicitud?.idEstatus === 3 ? 'border-yellow-500 bg-yellow-50' : 'border-primary bg-blue-50'} mt-4`}>
 
-                            <div className="text-center mb-4">
-                                <div className="inline-flex align-items-center justify-content-center bg-red-100 border-circle w-4rem h-4rem mb-3">
-                                    <i className="pi pi-exclamation-triangle text-2xl text-red-600"></i>
+                            {solicitud?.idEstatus === 3 ? (
+                                <div className="text-center py-2">
+                                    <i className="pi pi-clock text-5xl text-yellow-600 mb-3"></i>
+                                    <h2 className="text-2xl font-bold m-0 text-yellow-700 mb-2">Insumos atrasados</h2>
+                                    <p className="text-yellow-700 mb-4">
+                                        Esta solicitud está marcada como ATRASADA. El gasto ya fue cobrado y registrado.
+                                    </p>
+                                    <Button
+                                        label="Confirmar llegada de los insumos"
+                                        icon="pi pi-check-circle"
+                                        severity="success"
+                                        size="large"
+                                        className="w-full md:w-auto shadow-2"
+                                        onClick={() => openDialog('ARRIVAL')}
+                                    />
                                 </div>
-
-                                <h2 className="text-2xl font-bold m-0 text-red-700">
-                                    Insumos Pendientes
-                                </h2>
-
-                                <p className="text-red-600 mt-2">
-                                    Adjunta el comprobante/recibo o factura de
-                                    compra correspondiente a esta orden.
-                                </p>
-                            </div>
-
-                            <div className="surface-card border-2 border-dashed surface-border border-round p-5 flex flex-column align-items-center justify-content-center bg-white">
-                                <i className="pi pi-cloud-upload text-6xl text-400 mb-4"></i>
-
-                                <FileUpload
-                                    mode="basic"
-                                    name="file"
-                                    customUpload
-                                    uploadHandler={onCustomUpload}
-                                    accept="image/*,application/pdf"
-                                    maxFileSize={2000000}
-                                    chooseLabel="Sube tu recibo"
-                                    className="p-button-lg"
-                                    auto={true}
-                                />
-
-                                <span className="text-500 mt-3 text-sm">
-                                    Formatos aceptados: PDF, JPG, PNG (Máx 2MB)
-                                </span>
-                            </div>
+                            ) : (
+                                <div className="py-2">
+                                    <h2 className="text-2xl font-bold m-0 text-primary-700 text-center mb-4">¿Qué deseas hacer con esta solicitud?</h2>
+                                    <div className="flex flex-column md:flex-row justify-content-center gap-3">
+                                        <Button
+                                            label="Registrar compra exitosa"
+                                            icon="pi pi-save"
+                                            severity={undefined}
+                                            className="w-full md:w-auto shadow-2"
+                                            onClick={() => openDialog('SUCCESS')}
+                                        />
+                                        <Button
+                                            label="Reportar insumos atrasados"
+                                            icon="pi pi-calendar-plus"
+                                            severity="warning"
+                                            className="w-full md:w-auto shadow-2"
+                                            onClick={() => openDialog('DELAY')}
+                                        />
+                                    </div>
+                                </div>
+                            )}
                         </Card>
                     </div>
 
-                    {/* Modal para Notificar Retraso */}
-                    <Dialog
-                        header="Insumos Atrasados"
-                        visible={showDelayDialog}
-                        style={{ width: '90vw', maxWidth: '400px' }}
-                        modal
-                        onHide={() => setShowDelayDialog(false)}
-                    >
-                        <div className="flex flex-column gap-3 pt-2">
-                            <p className="m-0 line-height-3 text-sm text-600">
-                                Notificar al equipo sobre el tiempo estimado de
-                                llegada de los insumos requeridos.
-                            </p>
-
-                            <div className="field">
-                                <label
-                                    htmlFor="days"
-                                    className="font-bold block mb-2"
-                                >
-                                    Cantidad de días de retraso:
-                                </label>
-
-                                <InputNumber
-                                    id="days"
-                                    value={delayDays}
-                                    onValueChange={(
-                                        e: InputNumberValueChangeEvent
-                                    ) => setDelayDays(e.value ?? null)}
-                                    showButtons
-                                    min={1}
-                                    suffix=" días"
-                                    className="w-full"
-                                    inputClassName="text-center"
-                                />
-                            </div>
-
-                            <div className="flex justify-content-end gap-2">
-                                <Button
-                                    label="Cancelar"
-                                    icon="pi pi-times"
-                                    text
-                                    onClick={() => setShowDelayDialog(false)}
-                                />
-
-                                <Button
-                                    label="Notificar"
-                                    icon="pi pi-send"
-                                    severity="danger"
-                                    onClick={handleNotifyDelay}
-                                />
-                            </div>
-                        </div>
-                    </Dialog>
+                    <PurchaseActionDialog
+                        visible={dialogVisible}
+                        mode={dialogMode}
+                        onHide={() => setDialogVisible(false)}
+                        onSubmit={handleDialogSubmit}
+                        isSubmitting={isSubmitting}
+                    />
                 </>
             )}
         </div>

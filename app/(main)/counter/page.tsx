@@ -75,8 +75,6 @@ const Counter = () => {
     const [selectedProduct, setSelectedProduct] = useState<any>(null);
     const [pendingProduct, setPendingProduct] = useState<Producto | null>(null);
     // LÓGICA DE PAGOS (Para Modal Orden)
-    const [, setPaymentType] = useState<'unico' | 'anticipo' | 'plazos'>('unico');
-    const [, setAdvanceAmount] = useState<number>(0);
     const [activeOrderCondition, setActiveOrderCondition] = useState<number>(1);
     // Filtros y Toast
     const toast = useRef<Toast>(null);
@@ -354,16 +352,24 @@ const Counter = () => {
         }
     };
 
-    const handleCloseQuoteSummary = () => {
-        setShowQuoteSummary(false);
-        setAssignedClient(null);
-        setRequiresBilling(false);
-        setSelectedDesigner(null);
-    };
 
     const handleClearScreen = () => {
-        setQuoteItems([]); setAssignedClient(null); setSelectedProduct(null);
-        setActiveOrderId(null); setActiveOrderTotal(0);
+        // Limpieza de items y productos
+        setQuoteItems([]);
+        setSelectedProduct(null);
+        setPendingProduct(null);
+
+        // Limpieza completa del cliente asignado y sus preferencias
+        setAssignedClient(null);
+        setSelectedDesigner(null);
+        setRequiresBilling(false);
+
+        // Limpieza de estados de orden/pago activa
+        setActiveOrderId(null);
+        setActiveOrderTotal(0);
+        setActiveOrderPaid(0);
+        setActiveOrderCondition(1);
+        setOrderNotes('');
     };
 
     const searchProduct = async (e: AutoCompleteCompleteEvent) => {
@@ -417,41 +423,72 @@ const Counter = () => {
     const handleDelete = (row: any) => setQuoteItems(quoteItems.filter(i => i.idProducto !== row.idProducto));
 
     const handleProcessPayment = async (data: PaymentData) => {
-        if (!activeOrderId || isSubmitting) return;
+        if (activeOrderId === null || isSubmitting) return;
+
+        const esAbono =
+            activeOrderPaid > 0 ||
+            (activeOrderStatus !== 1 && activeOrderStatus !== 0) ||
+            activeOrderCondition > 1;
+
         setIsSubmitting(true);
+
         try {
-            // 1. Actualizar condición de pago
-            await OrderService.updateCondicionPago(activeOrderId, data.conditionId);
-            // 2. Actualizar notas
+            if (!esAbono) {
+                await OrderService.updateCondicionPago(
+                    activeOrderId,
+                    data.conditionId
+                );
+            }
+
             if (orderNotes !== undefined) {
                 await OrderService.updateNotasDiseno(activeOrderId, orderNotes);
             }
-            // 3. Registrar pago financiero
+
             if (data.amount > 0) {
                 await OrderService.registrarPago(activeOrderId, {
                     monto: data.amount,
-                    referencia: `Pago ${data.paymentType} - ${data.notes}`,
+                    referencia: `Pago ${data.paymentType} - ${data.notes || ''}`,
                     idUsuario: currentUserId
                 });
             }
-            // 4. Subir archivo
+
             if (data.file) {
                 try {
                     await OrderService.subirArchivo(activeOrderId, data.file);
-                    toast.current?.show({ severity: 'info', summary: 'Archivo', detail: 'Archivo adjuntado correctamente.' });
-                } catch (e) { console.error(e); }
+                    toast.current?.show({
+                        severity: 'info',
+                        summary: 'Archivo',
+                        detail: 'Archivo adjuntado correctamente.'
+                    });
+                } catch (error) {
+                    console.error(error);
+                }
             }
-            // 5. Avanzar estatus si es Cotización
+
             if (activeOrderStatus === 1) {
-                await OrderService.avanzarEstatus(activeOrderId, { idUsuario: currentUserId });
+                await OrderService.avanzarEstatus(activeOrderId, {
+                    idUsuario: currentUserId
+                });
             }
-            toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'Orden actualizada correctamente' });
+
+            toast.current?.show({
+                severity: 'success',
+                summary: 'Éxito',
+                detail: 'Orden actualizada correctamente'
+            });
+
             setShowOrderSummary(false);
             setActiveOrderId(null);
             setOrderNotes('');
+            setAssignedClient(null);
+            setSelectedDesigner(null);
             loadOrderHistory();
         } catch (error: any) {
-            toast.current?.show({ severity: 'error', summary: 'Error', detail: error.message });
+            toast.current?.show({
+                severity: 'error',
+                summary: 'Error',
+                detail: error.message || 'Error al procesar el pago'
+            });
         } finally {
             setIsSubmitting(false);
         }
@@ -464,8 +501,6 @@ const Counter = () => {
         setAssignedClient(clientFound || null);
         setSelectedDesigner(quoteRow.idUsuarioDisenador);
         setRequiresBilling(quoteRow.requiereFactura);
-        setPaymentType('unico');
-        setAdvanceAmount(0);
         setOrderNotes('');
         setActiveOrderStatus(quoteRow.idEstatusActual);
         setActiveOrderPaid(quoteRow.montoPagado || 0);
@@ -495,6 +530,7 @@ const Counter = () => {
             setShowOrdersList(false);
             setShowQuoteSummary(false);
             setShowOrderSummary(true);
+            setSelectedDesigner(null);
 
         } catch (error) {
             setActiveOrderItems([]);
@@ -505,70 +541,20 @@ const Counter = () => {
     const handleQuickPay = async (rowData: any) => {
         setActiveOrderId(rowData.idOrden);
         setActiveOrderTotal(rowData.montoTotal);
-
-        const { tipoVisual, montoSugerido } = calcularSugerenciaPago(rowData);
-        setPaymentType(tipoVisual);
-        setAdvanceAmount(montoSugerido);
-
+        setActiveOrderPaid(rowData.montoPagado || 0);
+        setActiveOrderCondition(rowData.idCondicionPago || 1);
+        setActiveOrderStatus(rowData.idEstatusActual);
         setOrderNotes('');
         setActiveOrderItems([]);
+
         try {
             const fullData = await OrderService.getOrdenById(rowData.idOrden);
             setOrderNotes(fullData.notasDiseno || '');
-        } catch (e) {
+        } catch (error) {
             setOrderNotes('');
         }
+
         setShowOrderSummary(true);
-        setActiveOrderStatus(rowData.idEstatusActual);
-        setActiveOrderPaid(rowData.montoPagado || 0);
-        setActiveOrderCondition(rowData.idCondicionPago || 1);
-    };
-
-    type TipoPago = 'unico' | 'anticipo' | 'plazos';
-
-    // Te sugiero definir una interfaz en lugar de usar `any` para evitar advertencias de TypeScript
-    interface OrdenPago {
-        montoTotal: number;
-        montoPagado: number;
-        idCondicionPago: number;
-    }
-
-    const calcularSugerenciaPago = (orden: OrdenPago) => {
-        const saldoPendiente = orden.montoTotal - orden.montoPagado;
-        let tipoVisual: TipoPago;
-        let montoSugerido: number;
-
-        switch (orden.idCondicionPago) {
-            case 2: {
-                tipoVisual = 'anticipo';
-                const yaPagoMinimo = orden.montoPagado >= (orden.montoTotal * 0.19);
-                montoSugerido = yaPagoMinimo ? saldoPendiente : orden.montoTotal * 0.50;
-                break;
-            }
-
-            case 3: {
-                tipoVisual = 'plazos';
-                const pago50 = orden.montoTotal * 0.50;
-                montoSugerido = Math.min(pago50, saldoPendiente);
-                break;
-            }
-
-            case 4: {
-                tipoVisual = 'plazos';
-                const pago33 = orden.montoTotal / 3;
-                montoSugerido = Math.min(pago33, saldoPendiente);
-                break;
-            }
-
-            case 1:
-            default:
-                tipoVisual = 'unico';
-                montoSugerido = saldoPendiente;
-                break;
-        }
-
-        montoSugerido = Math.max(0, Math.min(montoSugerido, saldoPendiente));
-        return { tipoVisual, montoSugerido };
     };
 
     const renderImporte = (d: any) => (
@@ -684,7 +670,12 @@ const Counter = () => {
                 {/* MODAL: RESUMEN DE COTIZACIÓN */}
                 <QuoteSummaryDialog
                     visible={showQuoteSummary}
-                    onHide={handleCloseQuoteSummary}
+                    onHide={() => {
+                        setShowQuoteSummary(false);
+                        setAssignedClient(null);
+                        setRequiresBilling(false);
+                        setSelectedDesigner(null);
+                    }}
                     items={quoteItems}
                     total={currentCartTotal}
                     productionTime={estimatedProductionTime}
@@ -702,8 +693,15 @@ const Counter = () => {
                 {/* MODAL: RESUMEN Y PAGO DE ORDEN */}
                 <OrderPaymentDialog
                     visible={showOrderSummary}
-                    onHide={() => setShowOrderSummary(false)}
+                    onHide={() => {
+                        setShowOrderSummary(false);
+                        setAssignedClient(null);
+                        setSelectedDesigner(null);
+                        setActiveOrderId(null);
+                        setOrderNotes('');
+                    }}
                     orderId={activeOrderId}
+                    client={assignedClient}
                     items={activeOrderItems}
                     total={activeOrderTotal}
                     paidAmount={activeOrderPaid}
@@ -711,6 +709,9 @@ const Counter = () => {
                     isSubmitting={isSubmitting}
                     onConfirmPayment={handleProcessPayment}
                     currentConditionId={activeOrderCondition}
+                    isAbono={
+                        activeOrderPaid > 0 || (activeOrderStatus !== 1 && activeOrderStatus !== 0) || activeOrderCondition > 1
+                    }
                     notes={orderNotes}
                     onNotesChange={setOrderNotes}
                 />

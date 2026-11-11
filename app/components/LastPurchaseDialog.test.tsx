@@ -64,7 +64,7 @@ describe('UltimaCompraDialog Component', () => {
     });
 
     it('debe cargar y mostrar los detalles de la última compra correctamente', async () => {
-        mockClientService.getUltimaCompra.mockResolvedValueOnce(mockUltimaCompraDTO as any);
+        mockClientService.getLastPurchase.mockResolvedValueOnce(mockUltimaCompraDTO as any);
         mockOrderService.getOrdenById.mockResolvedValueOnce(mockOrdenDTO as any);
 
         render(
@@ -76,7 +76,7 @@ describe('UltimaCompraDialog Component', () => {
         );
 
         await waitFor(() => {
-            expect(mockClientService.getUltimaCompra).toHaveBeenCalledWith(1);
+            expect(mockClientService.getLastPurchase).toHaveBeenCalledWith(1);
             expect(mockOrderService.getOrdenById).toHaveBeenCalledWith(501);
             expect(screen.getByText('Juan Pérez')).toBeInTheDocument();
             expect(screen.getByText('Impresión Lona 13oz')).toBeInTheDocument();
@@ -92,7 +92,7 @@ describe('UltimaCompraDialog Component', () => {
             fechaUltimaCompra: null
         };
 
-        mockClientService.getUltimaCompra.mockResolvedValueOnce(mockSinCompra as any);
+        mockClientService.getLastPurchase.mockResolvedValueOnce(mockSinCompra as any);
 
         render(
             <UltimaCompraDialog

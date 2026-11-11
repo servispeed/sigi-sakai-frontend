@@ -148,7 +148,7 @@ const ListProductsPage = () => {
             <Toast ref={toast} />
 
             <div className="flex justify-content-between align-items-center mb-4">
-                <h2 className="m-0">Lista de Productos</h2>
+                <h2 className="m-0">Lista de productos</h2>
                 <Link href="/counter" passHref legacyBehavior>
                     <a className="p-button p-component p-button-text p-button-plain">
                         <i className="pi pi-arrow-left mr-2"></i>

@@ -14,8 +14,8 @@ import { ChartOptions } from 'chart.js';
 import Link from 'next/link';
 import { DashboardService } from '@/app/service/dashboardService';
 import { CatalogService } from '@/app/service/catalogService';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+
+import { generarReporteFinancieroPDF } from '@/app/utils/reporteFinanciero';
 
 export interface Movimiento {
     id?: number;
@@ -328,57 +328,23 @@ const FinancePage = () => {
         const isIngreso = tipoStr.includes('INGRESO');
         const color = isIngreso ? 'text-green-500' : 'text-red-500';
         const sign = isIngreso ? '+' : '-';
-        return <span className={`font-bold ${color}`}>{sign} {formatCurrency(rowData.monto)}</span>;
+
+        return (
+            <span className={`font-bold ${color}`}>
+                {sign} {formatCurrency(Math.abs(rowData.monto))}
+            </span>
+        );
     };
 
-    // --- FUNCIÓN PARA GENERAR EL REPORTE PDF ---
-    const exportarPDF = () => {
-        const doc = new jsPDF();
-        doc.setFontSize(18);
-        doc.text('Reporte financiero', 14, 22);
-        doc.setFontSize(11);
-        doc.setTextColor(100);
-        const labelFiltro = filterOptions.find(f => f.value === filtroTiempo)?.label || filtroTiempo;
-        doc.text(`Período del reporte: ${labelFiltro}`, 14, 30);
-        doc.text(`Fecha de generación: ${new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`, 14, 36);
-
-        doc.setFontSize(14);
-        doc.setTextColor(0);
-        doc.text('Resumen de caja', 14, 50);
-
-        doc.setFontSize(11);
-        doc.text(`Balance actual: ${formatCurrency(totalesCaja.balance)}`, 14, 58);
-        doc.text(`Fondo base / Entradas: ${formatCurrency(totalesCaja.entradaCaja)}`, 14, 64);
-        doc.text(`Total ingresos: ${formatCurrency(totalesCaja.totalIngresos)}`, 14, 70);
-        doc.text(`Total egresos: ${formatCurrency(totalesCaja.totalEgresos)}`, 14, 76);
-
-        doc.setFontSize(14);
-        doc.text('Detalle de movimientos', 14, 95);
-
-        const tableColumn = ["Fecha", "Concepto", "Tipo", "Monto"];
-        const tableRows = movements.map(m => {
-            const fechaStr = formatDate(m.fecha);
-            const isIngreso = (m.tipoMovimiento || '').toUpperCase().includes('INGRESO');
-            const signo = isIngreso ? '+' : '-';
-            const montoStr = `${signo} ${formatCurrency(m.monto)}`;
-
-            return [fechaStr, m.concepto, m.tipoMovimiento, montoStr];
-        });
-
-        autoTable(doc, {
-            startY: 100,
-            head: [tableColumn],
-            body: tableRows,
-            theme: 'striped',
-            headStyles: { fillColor: [41, 128, 185] },
-            styles: { fontSize: 10 },
-            alternateRowStyles: { fillColor: [245, 245, 245] }
-        });
-
-        const fechaLegible = new Date().toLocaleDateString('es-MX').replace(/\//g, '-');
-        doc.save(`Reporte_Financiero_${labelFiltro}_${fechaLegible}.pdf`);
-
-        toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'Reporte descargado correctamente', life: 3000 });
+    const exportarPDF = async () => {
+        try {
+            const labelFiltro = filterOptions.find(f => f.value === filtroTiempo)?.label || filtroTiempo;
+            await generarReporteFinancieroPDF(totalesCaja, movements, labelFiltro);
+            toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'Reporte descargado correctamente', life: 3000 });
+        } catch (error) {
+            console.error("Error al exportar el PDF:", error);
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'No se pudo generar el documento', life: 3000 });
+        }
     };
 
     return (
@@ -426,7 +392,7 @@ const FinancePage = () => {
                     <div className="col-12 xl:col-4">
                         <Card className="shadow-1 h-full border-left-3 border-blue-500 surface-card flex flex-column justify-content-center align-items-center">
                             <div className="flex flex-column align-items-center justify-content-center text-center w-full">
-                                <span className="text-xl text-500 mb-2 font-semibold">Balance en Caja</span>
+                                <span className="text-xl text-500 mb-2 font-semibold">Balance en caja</span>
                                 {/* Utilizamos el balance que viene directamente del backend */}
                                 <span className="text-4xl font-bold text-blue-500 mb-2">{formatCurrency(totalesCaja.balance)}</span>
                                 <span className="text-sm text-500 mb-4">
@@ -435,13 +401,13 @@ const FinancePage = () => {
 
                                 <div className="flex flex-column gap-2 w-full px-3">
                                     <Button
-                                        label="Ajuste de Caja"
+                                        label="Ajuste de caja"
                                         icon="pi pi-sort-alt"
                                         className="p-button-outlined text-blue-500 w-full"
                                         onClick={() => setShowAjusteDialog(true)}
                                     />
                                     <Button
-                                        label="Registrar Egreso"
+                                        label="Registrar egreso"
                                         icon="pi pi-minus-circle"
                                         className="p-button-danger p-button-outlined w-full"
                                         onClick={() => setShowMovimientoDialog(true)}
