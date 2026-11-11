@@ -10,6 +10,7 @@ if (!updateServerUrl) {
 module.exports = {
     appId: 'com.servispeed.app',
     productName: 'SIGI',
+    artifactName: '${productName}-Setup-${version}.${ext}',
     directories: {
         output: 'dist',
     },
