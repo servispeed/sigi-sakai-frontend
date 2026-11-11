@@ -34,6 +34,7 @@ export interface AvanzarEstatusRequest {
 
 export interface Producto {
     idProducto: number;
+    nombre: string,
     descripcion: string;
     precioUnitario: number;
     precioPaquete: number;

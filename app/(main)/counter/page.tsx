@@ -16,11 +16,11 @@ import { UserService } from "@/app/service/userService";
 import { Client } from "@/app/types/clients";
 import { Producto, NuevaOrdenRequest } from "@/app/types/orders";
 // DIALOGS
-import { QuoteListDialog } from './QuoteListDialog';
-import { ActiveOrdersDialog } from './ActiveOrdersDialog';
-import { QuoteSummaryDialog } from './QuoteSummaryDialog';
-import { OrderPaymentDialog, PaymentData } from './OrderPaymentDialog';
-import { ProductQuantityDialog } from './ProductQuantityDialog';
+import { QuoteListDialog } from '../../components/QuoteListDialog';
+import { ActiveOrdersDialog } from '../../components/ActiveOrdersDialog';
+import { QuoteSummaryDialog } from '../../components/QuoteSummaryDialog';
+import { OrderPaymentDialog, PaymentData } from '../../components/OrderPaymentDialog';
+import { ProductQuantityDialog } from '../../components/ProductQuantityDialog';
 import { ClientFormDialog } from "@/app/components/ClientFormDialog";
 import { ClientSearchDialog } from "@/app/components/ClientSearchDialog";
 
@@ -75,8 +75,6 @@ const Counter = () => {
     const [selectedProduct, setSelectedProduct] = useState<any>(null);
     const [pendingProduct, setPendingProduct] = useState<Producto | null>(null);
     // LÓGICA DE PAGOS (Para Modal Orden)
-    const [paymentType, setPaymentType] = useState<'unico' | 'anticipo' | 'plazos'>('unico');
-    const [advanceAmount, setAdvanceAmount] = useState<number>(0);
     const [activeOrderCondition, setActiveOrderCondition] = useState<number>(1);
     // Filtros y Toast
     const toast = useRef<Toast>(null);
@@ -186,13 +184,11 @@ const Counter = () => {
                 label: u.nombre,
                 value: u.idUsuario
             }));
-            setDesigners([
-                { label: '--- Sin Asignar (Pendiente) ---', value: null },
-                ...options
-            ]);
+            setDesigners(options);
+
         } catch (error) {
             console.error("Error cargando diseñadores", error);
-            setDesigners([{ label: '--- Sin Asignar (Pendiente) ---', value: null }]);
+            setDesigners([]);
         }
     };
 
@@ -209,69 +205,88 @@ const Counter = () => {
         }
     };
 
+    // 1. Extrae la lógica del nombre del diseñador
+    const resolverNombreDisenador = (idUsuarioDisenador: number | null, diseñadores: any[]): string => {
+        if (idUsuarioDisenador === null) return 'Sin asginar';
+        const designerObj = diseñadores.find(d => d.value == idUsuarioDisenador);
+        return designerObj ? designerObj.label : `Diseñador ID: ${idUsuarioDisenador}`;
+    };
+
+    // 2. Extrae la lógica para enriquecer la orden
+    const enriquecerOrden = (order: any, diseñadores: any[], mapEstatus: any) => {
+        const nombreGrupo = resolverNombreDisenador(order.idUsuarioDisenador, diseñadores);
+        const estatusNombre = mapEstatus?.[order.idEstatusActual] ?? `Estatus ${order.idEstatusActual}`;
+
+        return {
+            ...order,
+            nombreDisenador: nombreGrupo,
+            saldoPendiente: (order.montoTotal || 0) - (order.montoPagado || 0),
+            estatusNombre
+        };
+    };
+
+    // 3. Extrae el filtrado de filas expandidas iniciales
+    const obtenerFilasExpandidasIniciales = (data: any[]) => {
+        const initialExpandedRows: any[] = [];
+        const addedGroups = new Set();
+
+        data.forEach((row) => {
+            if (!addedGroups.has(row.nombreDisenador)) {
+                addedGroups.add(row.nombreDisenador);
+                initialExpandedRows.push(row);
+            }
+        });
+
+        return initialExpandedRows;
+    };
+
+    // --- FUNCIÓN PRINCIPAL ---
     const loadOrderHistory = async (pageToLoad = lazyParams.page, pageSize = lazyParams.rows) => {
         setIsLoadingList(true);
+
         try {
-            const response = await OrderService.getOrdenes(pageToLoad, pageSize);
-            const data = (response as any).content || [];
-            const pageInfo = (response as any).page;
-            if (pageInfo) {
-                setTotalRecords(pageInfo.totalElements);
+            const response: any = await OrderService.getOrdenes(pageToLoad, pageSize);
+            const data = response?.content || [];
+
+            if (response?.page) {
+                setTotalRecords(response.page.totalElements);
             }
-            if (!data || data.length === 0) {
+
+            if (data.length === 0) {
                 setQuotesList([]);
                 setOrdersList([]);
                 return;
             }
-            let listaDiseñadoresParaMapeo = designers;
-            if (listaDiseñadoresParaMapeo.length <= 1) {
+
+            // Obtener diseñadores si no están cargados
+            let listaDiseñadores = designers;
+            if (listaDiseñadores.length <= 1) {
                 try {
                     const rawDesigners = await UserService.getDesigners();
                     const options = rawDesigners.map((u: any) => ({ label: u.nombre, value: u.idUsuario }));
-                    listaDiseñadoresParaMapeo = [{ label: '--PENDIENTE DE ASIGNACIÓN--', value: null }, ...options];
-                    setDesigners(listaDiseñadoresParaMapeo);
-                } catch (err) { console.error(err); }
-            }
-            let enrichedData = data.map((order: any) => {
-                const designerObj = listaDiseñadoresParaMapeo.find(d => d.value == order.idUsuarioDisenador);
-                let nombreGrupo = '';
-                if (order.idUsuarioDisenador === null) nombreGrupo = '--PENDIENTE DE ASIGNACIÓN--';
-                else if (designerObj) nombreGrupo = designerObj.label;
-                else nombreGrupo = `Diseñador ID: ${order.idUsuarioDisenador}`;
-                const estatusNombre = (statusMap && statusMap[order.idEstatusActual])
-                    ? statusMap[order.idEstatusActual]
-                    : `Estatus ${order.idEstatusActual}`;
-                return {
-                    ...order,
-                    nombreDisenador: nombreGrupo,
-                    saldoPendiente: (order.montoTotal || 0) - (order.montoPagado || 0),
-                    estatusNombre: estatusNombre
-                };
-            });
-            enrichedData.sort((a: any, b: any) => {
-                if (a.nombreDisenador < b.nombreDisenador) return -1;
-                if (a.nombreDisenador > b.nombreDisenador) return 1;
-                return 0;
-            });
-            const initialExpandedRows: any[] = [];
-            const addedGroups = new Set();
-            enrichedData.forEach((row: any) => {
-                const groupKey = row.nombreDisenador;
-                if (!addedGroups.has(groupKey)) {
-                    addedGroups.add(groupKey);
-                    initialExpandedRows.push(row);
+                    listaDiseñadores = [{ label: 'Sin asignar', value: null }, ...options];
+                    setDesigners(listaDiseñadores);
+                } catch (err) {
+                    console.error(err);
                 }
-            });
-            setExpandedRows(initialExpandedRows);
+            }
+
+            // Enriquecer y ordenar
+            const enrichedData = data.map((order: any) => enriquecerOrden(order, listaDiseñadores, statusMap));
+
+            enrichedData.sort((a: any, b: any) => a.nombreDisenador.localeCompare(b.nombreDisenador));
+
+            // Establecer estados de la UI
+            setExpandedRows(obtenerFilasExpandidasIniciales(enrichedData));
             setQuotesList(enrichedData.filter((o: any) => o.idEstatusActual === 1));
             setOrdersList(enrichedData.filter((o: any) => o.idEstatusActual !== 1));
+
         } catch (error) {
             toast.current?.show({ severity: 'error', summary: 'Error', detail: 'No se pudo cargar el historial' });
         } finally {
             setIsLoadingList(false);
         }
     };
-
     const loadProductsCatalog = async () => {
         try {
             const data = await CatalogService.getAllProductos();
@@ -292,7 +307,20 @@ const Counter = () => {
     };
 
     const handleCreateQuote = async () => {
-        if (!assignedClient) { toast.current?.show({ severity: 'warn', detail: 'Asigna un cliente' }); return; }
+        if (!assignedClient) {
+            toast.current?.show({
+                severity: 'warn',
+                detail: 'Asigna un cliente'
+            });
+            return;
+        }
+        if (!selectedDesigner) {
+            toast.current?.show({
+                severity: 'warn',
+                detail: 'Selecciona un diseñador'
+            });
+            return;
+        }
         const nuevaOrden: NuevaOrdenRequest = {
             orden: {
                 idUsuario: currentUserId,
@@ -306,7 +334,7 @@ const Counter = () => {
                 insumosVerificados: false
             },
             detalles: quoteItems.map(i => ({
-                idProducto: i.idProducto,
+                idProducto: i.idProducto!,
                 cantidad: i.cantidad,
                 precioUnitario: i.precioUnitario,
                 importe: i.importe
@@ -315,7 +343,7 @@ const Counter = () => {
         };
         try {
             await OrderService.crearOrden(nuevaOrden);
-            toast.current?.show({ severity: 'success', summary: 'Cotización Guardada', detail: 'Disponible en la lista.' });
+            toast.current?.show({ severity: 'success', summary: 'Cotización guardada', detail: 'Disponible en la lista.' });
             setShowQuoteSummary(false);
             handleClearScreen();
             await loadOrderHistory();
@@ -324,21 +352,29 @@ const Counter = () => {
         }
     };
 
-    const handleCloseQuoteSummary = () => {
-        setShowQuoteSummary(false);
-        setAssignedClient(null);
-        setRequiresBilling(false);
-        setSelectedDesigner(null);
-    };
 
     const handleClearScreen = () => {
-        setQuoteItems([]); setAssignedClient(null); setSelectedProduct(null);
-        setActiveOrderId(null); setActiveOrderTotal(0);
+        // Limpieza de items y productos
+        setQuoteItems([]);
+        setSelectedProduct(null);
+        setPendingProduct(null);
+
+        // Limpieza completa del cliente asignado y sus preferencias
+        setAssignedClient(null);
+        setSelectedDesigner(null);
+        setRequiresBilling(false);
+
+        // Limpieza de estados de orden/pago activa
+        setActiveOrderId(null);
+        setActiveOrderTotal(0);
+        setActiveOrderPaid(0);
+        setActiveOrderCondition(1);
+        setOrderNotes('');
     };
 
     const searchProduct = async (e: AutoCompleteCompleteEvent) => {
         if (!e.query.trim()) { setProducts([]); return; }
-        try { setProducts(await CatalogService.getProductos(e.query)); } catch (err) { }
+        try { setProducts(await CatalogService.getProducto(e.query)); } catch (err) { }
     };
 
     const onProductSelect = (e: any) => {
@@ -387,32 +423,72 @@ const Counter = () => {
     const handleDelete = (row: any) => setQuoteItems(quoteItems.filter(i => i.idProducto !== row.idProducto));
 
     const handleProcessPayment = async (data: PaymentData) => {
-        if (!activeOrderId || isSubmitting) return;
+        if (activeOrderId === null || isSubmitting) return;
+
+        const esAbono =
+            activeOrderPaid > 0 ||
+            (activeOrderStatus !== 1 && activeOrderStatus !== 0) ||
+            activeOrderCondition > 1;
+
         setIsSubmitting(true);
+
         try {
-            await OrderService.updateCondicionPago(activeOrderId, data.conditionId);
+            if (!esAbono) {
+                await OrderService.updateCondicionPago(
+                    activeOrderId,
+                    data.conditionId
+                );
+            }
+
+            if (orderNotes !== undefined) {
+                await OrderService.updateNotasDiseno(activeOrderId, orderNotes);
+            }
+
             if (data.amount > 0) {
                 await OrderService.registrarPago(activeOrderId, {
                     monto: data.amount,
-                    referencia: `Pago ${data.paymentType} - ${data.notes}`,
+                    referencia: `Pago ${data.paymentType} - ${data.notes || ''}`,
                     idUsuario: currentUserId
                 });
             }
+
             if (data.file) {
                 try {
                     await OrderService.subirArchivo(activeOrderId, data.file);
-                    toast.current?.show({ severity: 'info', summary: 'Archivo', detail: 'Archivo adjuntado correctamente.' });
-                } catch (e) { console.error(e); }
+                    toast.current?.show({
+                        severity: 'info',
+                        summary: 'Archivo',
+                        detail: 'Archivo adjuntado correctamente.'
+                    });
+                } catch (error) {
+                    console.error(error);
+                }
             }
+
             if (activeOrderStatus === 1) {
-                await OrderService.avanzarEstatus(activeOrderId, { idUsuario: currentUserId });
+                await OrderService.avanzarEstatus(activeOrderId, {
+                    idUsuario: currentUserId
+                });
             }
-            toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'Orden actualizada correctamente' });
+
+            toast.current?.show({
+                severity: 'success',
+                summary: 'Éxito',
+                detail: 'Orden actualizada correctamente'
+            });
+
             setShowOrderSummary(false);
             setActiveOrderId(null);
+            setOrderNotes('');
+            setAssignedClient(null);
+            setSelectedDesigner(null);
             loadOrderHistory();
         } catch (error: any) {
-            toast.current?.show({ severity: 'error', summary: 'Error', detail: error.message });
+            toast.current?.show({
+                severity: 'error',
+                summary: 'Error',
+                detail: error.message || 'Error al procesar el pago'
+            });
         } finally {
             setIsSubmitting(false);
         }
@@ -425,14 +501,13 @@ const Counter = () => {
         setAssignedClient(clientFound || null);
         setSelectedDesigner(quoteRow.idUsuarioDisenador);
         setRequiresBilling(quoteRow.requiereFactura);
-        setPaymentType('unico');
-        setAdvanceAmount(0);
         setOrderNotes('');
         setActiveOrderStatus(quoteRow.idEstatusActual);
         setActiveOrderPaid(quoteRow.montoPagado || 0);
         setActiveOrderCondition(quoteRow.idCondicionPago || 1);
         try {
             const fullOrderData = await OrderService.getOrdenById(quoteRow.idOrden);
+            setOrderNotes(fullOrderData.notasDiseno || '');
             if (fullOrderData.detalles && Array.isArray(fullOrderData.detalles)) {
                 const mappedItems: any[] = fullOrderData.detalles.map((d: any) => {
                     const catalogoProducto = productsCatalog.find((p: any) => p.idProducto === d.idProducto);
@@ -455,6 +530,7 @@ const Counter = () => {
             setShowOrdersList(false);
             setShowQuoteSummary(false);
             setShowOrderSummary(true);
+            setSelectedDesigner(null);
 
         } catch (error) {
             setActiveOrderItems([]);
@@ -462,59 +538,40 @@ const Counter = () => {
         }
     };
 
-    const handleQuickPay = (rowData: any) => {
+    const handleQuickPay = async (rowData: any) => {
         setActiveOrderId(rowData.idOrden);
         setActiveOrderTotal(rowData.montoTotal);
-        const { tipoVisual, montoSugerido } = calcularSugerenciaPago(rowData);
-        setPaymentType(tipoVisual);
-        setAdvanceAmount(montoSugerido);
-        setOrderNotes('');
-        setActiveOrderItems([]);
-        setShowOrderSummary(true);
-        setActiveOrderStatus(rowData.idEstatusActual);
         setActiveOrderPaid(rowData.montoPagado || 0);
         setActiveOrderCondition(rowData.idCondicionPago || 1);
-    };
+        setActiveOrderStatus(rowData.idEstatusActual);
+        setOrderNotes('');
+        setActiveOrderItems([]);
 
-    type TipoPago = 'unico' | 'anticipo' | 'plazos';
-    const calcularSugerenciaPago = (orden: any) => {
-        const saldoPendiente = orden.montoTotal - orden.montoPagado;
-        let tipoVisual: TipoPago = 'unico';
-        let montoSugerido = saldoPendiente;
-        switch (orden.idCondicionPago) {
-            case 1:
-                tipoVisual = 'unico';
-                montoSugerido = saldoPendiente;
-                break;
-
-            case 2:
-                tipoVisual = 'anticipo';
-                if (orden.montoPagado >= (orden.montoTotal * 0.19)) {
-                    montoSugerido = saldoPendiente;
-                } else {
-                    montoSugerido = orden.montoTotal * 0.50;
-                }
-                break;
-
-            case 3:
-                tipoVisual = 'plazos';
-                const pago50 = orden.montoTotal * 0.50;
-                montoSugerido = Math.min(pago50, saldoPendiente);
-                break;
-
-            case 4:
-                tipoVisual = 'plazos';
-                const pago33 = orden.montoTotal / 3;
-                montoSugerido = Math.min(pago33, saldoPendiente);
-                break;
-
-            default:
-                tipoVisual = 'unico';
-                montoSugerido = saldoPendiente;
+        try {
+            const fullData = await OrderService.getOrdenById(rowData.idOrden);
+            setOrderNotes(fullData.notasDiseno || '');
+        } catch (error) {
+            setOrderNotes('');
         }
-        montoSugerido = Math.max(0, Math.min(montoSugerido, saldoPendiente));
-        return { tipoVisual, montoSugerido };
+
+        setShowOrderSummary(true);
     };
+
+    const renderImporte = (d: any) => (
+        <span className="text-green-700 text-lg">
+            ${d.importe.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+    );
+
+    const renderActionColumn = (rowData: any) => (
+        <Button
+            icon="pi pi-trash"
+            rounded
+            text
+            severity="danger"
+            onClick={() => handleDelete(rowData)}
+        />
+    );
 
     return (
         <>
@@ -526,6 +583,12 @@ const Counter = () => {
                         <a className="p-button p-component p-button-outlined p-button-icon-left">
                             <i className="pi pi-users p-button-icon p-button-icon-left"></i>
                             <span className="p-button-label">Lista de clientes</span>
+                        </a>
+                    </Link>
+                    <Link href="/listproduct" passHref legacyBehavior>
+                        <a className="p-button p-component p-button-outlined p-button-icon-left">
+                            <i className="pi pi-cart-plus p-button-icon p-button-icon-left"></i>
+                            <span className="p-button-label">Lista de productos</span>
                         </a>
                     </Link>
                     <Button label="Lista de cotizaciones" icon="pi pi-list" outlined onClick={() => setShowQuotesList(true)} />
@@ -564,19 +627,14 @@ const Counter = () => {
                     <Column field="cantidad" header="Cantidad" style={{ width: '15%' }} />
                     <Column
                         field="importe"
-                        header="Total"
-                        body={(d) => (
-                            <span className="text-green-700 text-lg">
-                                ${d.importe.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </span>
-                        )}
-                        style={{ width: '15%', fontWeight: 'bold', textAlign: 'right' }}
+                        header="Importe"
+                        body={renderImporte}
                     />
-                    <Column body={(d) => <Button icon="pi pi-trash" rounded text severity="danger" onClick={() => handleDelete(d)} />} style={{ width: '8%' }} />
+                    <Column body={renderActionColumn} style={{ width: '8%' }} />
                 </DataTable>
 
                 <div className="flex justify-content-end mt-4 align-items-center gap-4">
-                    <h3 className="m-0 text-gray-700">Total: ${currentCartTotal.toFixed(2)}</h3>
+                    <h3 className="m-0 text-700">Total: ${currentCartTotal.toFixed(2)}</h3>
                     <Button label="Cotizar" icon="pi pi-money-bill" className="p-button-lg" onClick={() => setShowQuoteSummary(true)} disabled={quoteItems.length === 0} />
                 </div>
 
@@ -612,7 +670,12 @@ const Counter = () => {
                 {/* MODAL: RESUMEN DE COTIZACIÓN */}
                 <QuoteSummaryDialog
                     visible={showQuoteSummary}
-                    onHide={handleCloseQuoteSummary}
+                    onHide={() => {
+                        setShowQuoteSummary(false);
+                        setAssignedClient(null);
+                        setRequiresBilling(false);
+                        setSelectedDesigner(null);
+                    }}
                     items={quoteItems}
                     total={currentCartTotal}
                     productionTime={estimatedProductionTime}
@@ -630,8 +693,15 @@ const Counter = () => {
                 {/* MODAL: RESUMEN Y PAGO DE ORDEN */}
                 <OrderPaymentDialog
                     visible={showOrderSummary}
-                    onHide={() => setShowOrderSummary(false)}
+                    onHide={() => {
+                        setShowOrderSummary(false);
+                        setAssignedClient(null);
+                        setSelectedDesigner(null);
+                        setActiveOrderId(null);
+                        setOrderNotes('');
+                    }}
                     orderId={activeOrderId}
+                    client={assignedClient}
                     items={activeOrderItems}
                     total={activeOrderTotal}
                     paidAmount={activeOrderPaid}
@@ -639,6 +709,11 @@ const Counter = () => {
                     isSubmitting={isSubmitting}
                     onConfirmPayment={handleProcessPayment}
                     currentConditionId={activeOrderCondition}
+                    isAbono={
+                        activeOrderPaid > 0 || (activeOrderStatus !== 1 && activeOrderStatus !== 0) || activeOrderCondition > 1
+                    }
+                    notes={orderNotes}
+                    onNotesChange={setOrderNotes}
                 />
 
                 {/* MODAL: SELECCION DE CLIENTE*/}
