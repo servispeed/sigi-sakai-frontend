@@ -7,6 +7,12 @@ interface ClientBase {
     direccionFiscal: string | null;
     idUsoCfdi: number | null;
     idRegimenFiscal: number | null;
+    creditoHabilitado?: boolean | null;
+    estatusCredito?: 'AL CORRIENTE' | 'ATRASADO' | 'SUSPENDIDO' | string | null;
+    diasCredito?: number | null;
+    limiteCredito?: number | null;
+    totalCompras?: number;
+    documentosCount?: number;
 }
 
 export interface Client extends ClientBase {

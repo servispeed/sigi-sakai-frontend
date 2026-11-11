@@ -15,7 +15,12 @@ import { Tag } from 'primereact/tag';
 import { OrderService } from '@/app/service/orderService';
 import { CatalogService } from '@/app/service/catalogService';
 import { ClientService } from '@/app/service/clientService';
+import { SobranteService } from '@/app/service/leftoverService';
 import { downloadDesignFile } from '@/app/utils/downloadUtils';
+
+// Componentes
+import { LeftoversDialog } from '@/app/components/LeftoversDialog';
+import { ConsumeLeftoverDialog } from '@/app/components/ConsumeLeftoverDialog';
 
 const PrintOrderPage = () => {
     const searchParams = useSearchParams();
@@ -23,7 +28,7 @@ const PrintOrderPage = () => {
     const orderId = searchParams.get('id');
     const toast = useRef<Toast>(null);
 
-    // --- ESTADOS ---
+    // --- ESTADOS DE LA ORDEN ---
     const [orderData, setOrderData] = useState<any>(null);
     const [clientData, setClientData] = useState<any>(null);
     const [orderItems, setOrderItems] = useState<any[]>([]);
@@ -33,6 +38,15 @@ const PrintOrderPage = () => {
     const [imageError, setImageError] = useState(false);
     const [loading, setLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    // --- ESTADOS DE SOBRANTES ---
+    const [existingLeftovers, setExistingLeftovers] = useState<any[]>([]);
+    const [showLeftoversDialog, setShowLeftoversDialog] = useState(false);
+
+    // NUEVOS ESTADOS PARA CONSUMIR
+    const [showConsumeDialog, setShowConsumeDialog] = useState(false);
+    const [isConsuming, setIsConsuming] = useState(false);
+    const [consumeData, setConsumeData] = useState<{ idSobrante: number, maxAmount: number, productName: string } | null>(null);
 
     useEffect(() => {
         if (orderId) {
@@ -93,12 +107,12 @@ const PrintOrderPage = () => {
 
             setOrderData(ordenActualizada);
 
-            // Mapeo de productos
+            let enrichedItems: any[] = [];
             if (order.detalles && order.detalles.length > 0) {
                 const productMap = new Map();
                 allProducts.forEach((p: any) => productMap.set(String(p.idProducto), p));
 
-                const enrichedItems = order.detalles.map((detalle: any) => {
+                enrichedItems = order.detalles.map((detalle: any) => {
                     const p = productMap.get(String(detalle.idProducto));
                     return {
                         ...detalle,
@@ -110,9 +124,34 @@ const PrintOrderPage = () => {
                 setOrderItems(enrichedItems);
             }
 
+            // Buscar datos del cliente y sobrantes existentes
             if (order.idCliente) {
                 const client = await ClientService.getById(order.idCliente);
                 setClientData(client);
+
+                try {
+                    const leftoversData = await SobranteService.getSobrantesPorCliente(order.idCliente);
+
+                    if (leftoversData && leftoversData.content && leftoversData.content.length > 0) {
+                        // Filtramos solo los sobrantes que coincidan con los productos de ESTA orden y tengan cantidad > 0
+                        const relevantLeftovers = leftoversData.content.filter((leftover: any) =>
+                            leftover.cantidadDisponible > 0 &&
+                            enrichedItems.some(item => item.idProducto === leftover.producto.idProducto)
+                        );
+
+                        if (relevantLeftovers.length > 0) {
+                            setExistingLeftovers(relevantLeftovers);
+                            toast.current?.show({
+                                severity: 'warn',
+                                summary: 'Sobrantes disponibles',
+                                detail: `El cliente tiene material sobrante para los productos de esta orden.`,
+                                life: 5000
+                            });
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error al buscar sobrantes previos', error);
+                }
             }
         } catch (error) {
             console.error('Error cargando datos', error);
@@ -128,9 +167,52 @@ const PrintOrderPage = () => {
         }
     };
 
-    const handleMarkReady = async () => {
+    const handleOpenConsumeDialog = (idSobrante: number, cantidadDisponible: number, productName: string) => {
+        setConsumeData({ idSobrante, maxAmount: cantidadDisponible, productName });
+        setShowConsumeDialog(true);
+    };
+
+    const processConsume = async (quantityToConsume: number) => {
+        if (!consumeData) return;
+        setIsConsuming(true);
+        try {
+            await SobranteService.consumirSobrante(consumeData.idSobrante, quantityToConsume);
+
+            toast.current?.show({
+                severity: 'success',
+                summary: 'Inventario actualizado',
+                detail: `Se descontaron ${quantityToConsume} unidades del inventario.`
+            });
+
+            setShowConsumeDialog(false);
+            loadInitialData(Number(orderId)); // Recargamos para actualizar la alerta
+        } catch (error: any) {
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: error.message || 'No se pudo consumir el sobrante.' });
+        } finally {
+            setIsConsuming(false);
+        }
+    };
+
+    const processCompletion = async (hasLeftovers: boolean, leftoverQuantities: { [key: number]: number }) => {
         setIsSubmitting(true);
         try {
+            if (hasLeftovers) {
+                const leftoverPromises = orderItems.map(item => {
+                    const qty = leftoverQuantities[item.idDetalle] || 0;
+                    if (qty > 0) {
+                        return SobranteService.registrarSobrante({
+                            idCliente: orderData.idCliente,
+                            idProducto: item.idProducto,
+                            idOrden: Number(orderId),
+                            cantidad: qty
+                        });
+                    }
+                    return Promise.resolve();
+                });
+
+                await Promise.all(leftoverPromises);
+            }
+
             const userStr = localStorage.getItem('user');
             const currentUserId = userStr ? JSON.parse(userStr).idUsuario : 1;
 
@@ -147,24 +229,27 @@ const PrintOrderPage = () => {
                 life: 2000
             });
 
+            setShowLeftoversDialog(false);
+
             setTimeout(() => {
                 router.push('/workshoplist');
             }, 1500);
+
         } catch (error) {
             console.error(error);
-            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'No se pudo finalizar la orden.' });
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'Ocurrió un problema al procesar la orden o los sobrantes.' });
             setIsSubmitting(false);
         }
     };
 
-const handleDownloadDesign = () => {
-    downloadDesignFile({
-        imageUrl,
-        rutaArchivo: orderData?.rutaArchivo,
-        fallbackFilename: `referencia-orden-${orderId}`,
-        toastRef: toast
-    });
-};
+    const handleDownloadDesign = () => {
+        downloadDesignFile({
+            imageUrl,
+            rutaArchivo: orderData?.rutaArchivo,
+            fallbackFilename: `referencia-orden-${orderId}`,
+            toastRef: toast
+        });
+    };
 
     const getStatusInfo = (status: number) => {
         if (status === 5) return { severity: 'warning', label: 'En impresión' };
@@ -184,7 +269,41 @@ const handleDownloadDesign = () => {
         </span>
     );
 
-    // --- RENDERS CONDICIONALES EXTRAÍDOS ---
+    // --- ALERTA VISUAL DE SOBRANTES DISPONIBLES ---
+    const renderLeftoversAlert = () => {
+        if (existingLeftovers.length === 0) return null;
+
+        return (
+            <div className="col-12 mb-3">
+                <div className="p-3 border-round bg-yellow-50 border-1 border-yellow-200 flex flex-column gap-2 shadow-1">
+                    <div className="flex align-items-center gap-2 text-yellow-800 font-bold">
+                        <i className="pi pi-exclamation-triangle"></i>
+                        <span>¡Atención! Este cliente tiene inventario sobrante para productos de esta orden:</span>
+                    </div>
+                    <ul className="m-0 pl-4 text-yellow-900 text-sm">
+                        {existingLeftovers.map(lo => {
+                            // Buscamos el nombre del producto en los items de la orden actual para mostrarlo
+                            const productName = orderItems.find(item => item.idProducto === lo.producto.idProducto)?.nombreProducto || `Producto ID #${lo.producto.idProducto}`;
+                            return (
+                                <li key={lo.idSobrante} className="mb-2">
+                                    {productName}: <span className="font-bold">{lo.cantidadDisponible} unidades disponibles</span>
+                                    <Button
+                                        label="Consumir material"
+                                        size="small"
+                                        severity="warning"
+                                        text
+                                        className="ml-3 p-1 py-0 font-bold"
+                                        onClick={() => handleOpenConsumeDialog(lo.idSobrante, lo.cantidadDisponible, productName)}
+                                    />
+                                </li>
+                            );
+                        })}
+                    </ul>
+                </div>
+            </div>
+        );
+    }
+
     const renderLoadingState = () => (
         <div className="flex justify-content-center align-items-center h-screen">
             <i className="pi pi-spin pi-spinner text-4xl"></i>
@@ -238,6 +357,9 @@ const handleDownloadDesign = () => {
                         </div>
                     </div>
                 </div>
+
+                {/* ALERTA DE INVENTARIO */}
+                {renderLeftoversAlert()}
 
                 {/* --- DETALLES DEL TRABAJO --- */}
                 <Card title="Detalles de impresión" className="mb-4 shadow-2">
@@ -368,7 +490,7 @@ const handleDownloadDesign = () => {
                             </div>
                             <div>
                                 <h2 className="text-xl font-bold text-green-900 m-0 mb-1">
-                                    La orden esta lista?
+                                    ¿La orden está lista?
                                 </h2>
                                 <p className="text-green-800 m-0 text-sm">
                                     Al terminar la impresión, marca la orden como lista.
@@ -382,11 +504,30 @@ const handleDownloadDesign = () => {
                             severity="success"
                             size="large"
                             className="w-full md:w-auto shadow-2"
-                            onClick={handleMarkReady}
-                            loading={isSubmitting}
+                            onClick={() => setShowLeftoversDialog(true)}
                         />
                     </div>
                 </Card>
+
+                {/* DIALOG EXTERNO PARA SOBRANTES */}
+                <LeftoversDialog
+                    visible={showLeftoversDialog}
+                    onHide={() => setShowLeftoversDialog(false)}
+                    onConfirm={processCompletion}
+                    orderItems={orderItems}
+                    isSubmitting={isSubmitting}
+                />
+
+                {/* DIALOG PARA CONSUMIR SOBRANTES */}
+                <ConsumeLeftoverDialog
+                    visible={showConsumeDialog}
+                    onHide={() => setShowConsumeDialog(false)}
+                    onConfirm={processConsume}
+                    isConsuming={isConsuming}
+                    maxQuantity={consumeData?.maxAmount || 1}
+                    productName={consumeData?.productName || ''}
+                />
+
             </div>
         </div>
     );

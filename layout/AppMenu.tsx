@@ -21,6 +21,8 @@ const AppMenu = () => {
                 { label: 'Lista de Productos', icon: 'pi pi-fw pi-cart-plus', to: '/listproduct', permiso: 'GESTIONAR_ORDENES' },
                 { label: 'Lista de Cotizaciones', icon: 'pi pi-fw pi-list', to: '/listquote', permiso: 'GESTIONAR_COTIZACIONES' },
                 { label: 'Lista de Ordenes', icon: 'pi pi-fw pi-inbox', to: '/listorder', permiso: 'GESTIONAR_ORDENES' },
+                { label: 'Lista de Solicitudes', icon: 'pi pi-fw pi-shopping-cart', to: '/shoplist', permiso: 'GESTIONAR_USUARIOS' },
+
                 {
                     label: 'Administración',
                     icon: 'pi pi-fw pi-user',
@@ -68,7 +70,8 @@ const AppMenu = () => {
                 label: 'Areas de Trabajo',
                 items: [
                     { label: 'Lista de Ordenes - Disenador', icon: 'pi pi-fw pi-palette', to: '/designerlist', permiso: 'VER_PANEL_DISENO' },
-                    { label: 'Lista de Ordenes - Jefe de Taller', icon: 'pi pi-fw pi-cog', to: '/workshoplist', permiso: 'VER_PANEL_TALLER' }
+                    { label: 'Lista de Ordenes - Jefe de Taller', icon: 'pi pi-fw pi-cog', to: '/workshoplist', permiso: 'VER_PANEL_TALLER' },
+                    { label: 'Inventario de Sobrantes', icon: 'pi pi-fw pi-box', to: '/leftoverlist', permiso: 'VER_PANEL_TALLER' },
                 ]
             });
         }
