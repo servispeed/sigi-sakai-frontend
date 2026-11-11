@@ -31,6 +31,13 @@ jobs:
       - name: Construir aplicación React/Next.js
         run: npm run build
 
+      - name: Instalar Wine (Requerido para compilar a Windows)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y wine64 wine32
+
       - name: Empaquetar con Electron Builder
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: npx electron-builder --win --publish never
