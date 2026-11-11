@@ -9,6 +9,7 @@ let server;
 
 autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
+autoUpdater.allowInsecureFeed = true;
 
 function startStaticServer() {
     return new Promise((resolve) => {
@@ -89,6 +90,16 @@ autoUpdater.on('update-downloaded', (info) => {
 
 autoUpdater.on('error', (err) => {
     console.error('Error en auto-updater:', err);
+});
+
+autoUpdater.on('error', (error) => {
+    console.error('Error del actualizador:', error);
+
+    dialog.showMessageBox({
+        type: 'error',
+        title: 'Error de actualización',
+        message: error.message
+    });
 });
 
 app.on('window-all-closed', () => {
