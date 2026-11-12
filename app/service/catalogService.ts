@@ -8,7 +8,7 @@ import {
 import { CondicionPago, Producto } from "@/app/types/orders";
 import { apiClient } from "./apiClient";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_ORDERS_API_URL;
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 export const CatalogService = {
 
