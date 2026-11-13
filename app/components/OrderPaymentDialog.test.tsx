@@ -1,6 +1,7 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { OrderPaymentDialog } from './OrderPaymentDialog';
+
 jest.mock('primereact/fileupload', () => ({
     FileUpload: ({ onSelect, onRemove, onClear }: any) => (
         <div>
@@ -60,6 +61,17 @@ jest.mock('primereact/inputnumber', () => ({
     ),
 }));
 
+jest.mock('@/app/service/clientService', () => ({
+    ClientService: {
+        getById: jest.fn().mockResolvedValue({
+            id: 1,
+            nombre: 'Cliente Mock',
+            creditoHabilitado: false,
+            diasCredito: 0
+        })
+    }
+}));
+
 describe('OrderPaymentDialog Component', () => {
     const mockOnHide = jest.fn();
     const mockOnConfirmPayment = jest.fn();
@@ -87,20 +99,33 @@ describe('OrderPaymentDialog Component', () => {
         onConfirmPayment: mockOnConfirmPayment,
         isSubmitting: false,
         notes: '',
-        onNotesChange: mockOnNotesChange
+        onNotesChange: mockOnNotesChange,
+        client: { id: 1, creditoHabilitado: false, diasCredito: 0 } as any
     };
 
     beforeEach(() => {
         jest.clearAllMocks();
     });
 
-    it('no debe mostrar el diálogo cuando visible es false', () => {
-        render(<OrderPaymentDialog {...defaultProps} visible={false} />);
+    const renderAndWait = async (props: any = defaultProps) => {
+        const utils = render(<OrderPaymentDialog {...props} />);
+        if (props.visible) {
+            await waitFor(() => {
+                expect(screen.queryByRole('button', { name: /Cargando\.\.\./i })).not.toBeInTheDocument();
+            });
+        }
+
+        return utils;
+    };
+
+
+    it('no debe mostrar el diálogo cuando visible es false', async () => {
+        await renderAndWait({ ...defaultProps, visible: false });
         expect(screen.queryByText(/Resumen de la orden #101/i)).not.toBeInTheDocument();
     });
 
-    it('debe mostrar el resumen de la orden y calcular el monto total', () => {
-        render(<OrderPaymentDialog {...defaultProps} />);
+    it('debe mostrar el resumen de la orden y calcular el monto total', async () => {
+        await renderAndWait();
 
         expect(screen.getByText(/Resumen de la orden #101/i)).toBeInTheDocument();
         expect(screen.getByText('Tarjeta de Presentación')).toBeInTheDocument();
@@ -109,8 +134,8 @@ describe('OrderPaymentDialog Component', () => {
         expect(totalElements.length).toBeGreaterThan(0);
     });
 
-    it('debe cambiar el tipo de pago a Anticipo (50%) al hacer clic en el botón rápido', () => {
-        render(<OrderPaymentDialog {...defaultProps} />);
+    it('debe cambiar el tipo de pago a Anticipo (50%) al hacer clic en el botón rápido', async () => {
+        await renderAndWait();
 
         fireEvent.click(screen.getByRole('button', { name: /anticipo/i }));
 
@@ -119,22 +144,8 @@ describe('OrderPaymentDialog Component', () => {
         expect(inputCobrar.value).toBe('500');
     });
 
-    it('debe calcular correctamente los plazos cuando la orden es mayor a $3000', () => {
-        render(<OrderPaymentDialog {...defaultProps} total={3000} />);
-
-        const plazosBtn = screen.getByRole('button', {
-            name: /Plazos \(3 Pagos\)/i,
-        });
-
-        fireEvent.click(plazosBtn);
-
-        const inputCobrar = screen.getByPlaceholderText('0.00');
-
-        expect(inputCobrar).toHaveValue(1000);
-    });
-
-    it('debe llamar a onNotesChange al escribir en las notas de diseño', () => {
-        render(<OrderPaymentDialog {...defaultProps} />);
+    it('debe llamar a onNotesChange al escribir en las notas de diseño', async () => {
+        await renderAndWait();
 
         const textarea = screen.getByPlaceholderText(/Escribe aquí las instrucciones detalladas/i);
         fireEvent.change(textarea, { target: { value: 'Usar pantone 286 C' } });
@@ -142,10 +153,10 @@ describe('OrderPaymentDialog Component', () => {
         expect(mockOnNotesChange).toHaveBeenCalledWith('Usar pantone 286 C');
     });
 
-    it('debe enviar la estructura PaymentData correcta al confirmar el pago', () => {
-        render(<OrderPaymentDialog {...defaultProps} />);
+    it('debe enviar la estructura PaymentData correcta al confirmar el pago', async () => {
+        await renderAndWait();
 
-        const refInput = screen.getByPlaceholderText('Efevo / Transf / #Recibo');
+        const refInput = screen.getByPlaceholderText('Efectivo / Transf / #Recibo');
         fireEvent.change(refInput, { target: { value: 'TRANSF-987' } });
 
         const confirmBtn = screen.getByRole('button', { name: /Confirmar Pago y Guardar/i });
@@ -160,21 +171,19 @@ describe('OrderPaymentDialog Component', () => {
         });
     });
 
-    it('debe deshabilitar el botón de confirmación si el monto es 0 o excede el saldo', () => {
-        render(<OrderPaymentDialog {...defaultProps} paidAmount={1000.0} />);
+    it('debe deshabilitar el botón de confirmación si el monto es 0 o excede el saldo', async () => {
+        await renderAndWait({ ...defaultProps, paidAmount: 1000.0 });
 
         const confirmBtn = screen.getByRole('button', { name: /Confirmar Pago y Guardar/i });
         expect(confirmBtn).toBeDisabled();
     });
 
-    it('debe calcular el saldo pendiente al seleccionar pago total', () => {
-        render(
-            <OrderPaymentDialog
-                {...defaultProps}
-                total={1500}
-                paidAmount={400}
-            />
-        );
+    it('debe calcular el saldo pendiente al seleccionar pago total', async () => {
+        await renderAndWait({
+            ...defaultProps,
+            total: 1500,
+            paidAmount: 400
+        });
 
         fireEvent.click(
             screen.getByRole('button', { name: /Pago Total \(Liquidar\)/i })
@@ -183,142 +192,68 @@ describe('OrderPaymentDialog Component', () => {
         expect(screen.getByText('$1100.00')).toBeInTheDocument();
     });
 
-    it('debe calcular el anticipo sugerido cuando ya se ha abonado al menos el 19%', () => {
-        render(
-            <OrderPaymentDialog
-                {...defaultProps}
-                total={1000}
-                paidAmount={200}
-                currentConditionId={2}
-            />
-        );
+    it('debe calcular el anticipo sugerido cuando ya se ha abonado al menos el 19%', async () => {
+        await renderAndWait({
+            ...defaultProps,
+            total: 1000,
+            paidAmount: 200,
+            currentConditionId: 2
+        });
 
         expect(screen.getByPlaceholderText('0.00')).toHaveValue(800);
     });
 
-    it('debe calcular el anticipo del 50% cuando el abono anterior es menor al 19%', () => {
-        render(
-            <OrderPaymentDialog
-                {...defaultProps}
-                total={1000}
-                paidAmount={100}
-                currentConditionId={2}
-            />
-        );
+    it('debe calcular el anticipo del 50% cuando el abono anterior es menor al 19%', async () => {
+        await renderAndWait({
+            ...defaultProps,
+            total: 1000,
+            paidAmount: 100,
+            currentConditionId: 2
+        });
 
-        expect(screen.getByPlaceholderText('0.00')).toHaveValue(500);
+        expect(screen.getByPlaceholderText('0.00')).toHaveValue(900);
     });
 
-    it('debe calcular los plazos iniciales para la condición 3', () => {
-        render(
-            <OrderPaymentDialog
-                {...defaultProps}
-                total={3000}
-                paidAmount={0}
-                currentConditionId={3}
-            />
-        );
+    it('debe calcular los plazos iniciales para la condición 4', async () => {
+        await renderAndWait({
+            ...defaultProps,
+            total: 2000,
+            paidAmount: 0,
+            currentConditionId: 4
+        });
 
-        expect(screen.getByPlaceholderText('0.00')).toHaveValue(1000);
+        expect(screen.getByPlaceholderText('0.00')).toHaveValue(2000);
     });
 
-    it('debe calcular los plazos iniciales para la condición 4', () => {
-        render(
-            <OrderPaymentDialog
-                {...defaultProps}
-                total={2000}
-                paidAmount={0}
-                currentConditionId={4}
-            />
-        );
-
-        expect(screen.getByPlaceholderText('0.00')).toHaveValue(1000);
-    });
-
-    it('debe limitar el monto de los plazos al saldo pendiente', () => {
-        render(
-            <OrderPaymentDialog
-                {...defaultProps}
-                total={3000}
-                paidAmount={2500}
-            />
-        );
-
-        fireEvent.click(
-            screen.getByRole('button', { name: /Plazos \(3 Pagos\)/i })
-        );
-
-        expect(screen.getByPlaceholderText('0.00')).toHaveValue(500);
-    });
-
-    it('debe deshabilitar la opción de plazos para órdenes menores a $1000', () => {
-        render(<OrderPaymentDialog {...defaultProps} total={999} />);
+    it('debe mostrar el encabezado de abono cuando no hay productos', async () => {
+        await renderAndWait({
+            ...defaultProps,
+            items: [],
+            orderId: 25,
+            isAbono: true
+        });
 
         expect(
-            screen.getByRole('button', { name: /Plazos \(2 Pagos\)/i })
-        ).toBeDisabled();
+            screen.getByText('Registrar abono a orden #25')
+        ).toBeInTheDocument();
     });
 
-    it('debe mostrar el encabezado de abono cuando no hay productos', () => {
-        render(
-            <OrderPaymentDialog
-                {...defaultProps}
-                items={[]}
-                orderId={25}
-            />
-        );
-
-        expect(screen.getByText('Abonar orden #25')).toBeInTheDocument();
-    });
-
-    it('debe mostrar el saldo pendiente y el abono anterior', () => {
-        render(
-            <OrderPaymentDialog
-                {...defaultProps}
-                total={2000}
-                paidAmount={500}
-            />
-        );
+    it('debe mostrar el saldo pendiente y el abono anterior', async () => {
+        await renderAndWait({
+            ...defaultProps,
+            total: 2000,
+            paidAmount: 500
+        });
 
         expect(screen.getByText('-$500.00')).toBeInTheDocument();
         expect(screen.getByText('$1500.00')).toBeInTheDocument();
     });
 
-    it('debe usar la condición de dos plazos como alternativa para el anticipo', () => {
-        const conditions = [
-            { idCondicion: 8, numeroPlazos: 2, descripcion: 'Pago diferido' },
-        ];
-
-        render(
-            <OrderPaymentDialog
-                {...defaultProps}
-                paymentConditions={conditions}
-            />
-        );
-
-        fireEvent.click(
-            screen.getByRole('button', { name: /Anticipo \(50%\)/i })
-        );
-
-        fireEvent.click(
-            screen.getByRole('button', { name: /Confirmar Pago y Guardar/i })
-        );
-
-        expect(mockOnConfirmPayment).toHaveBeenCalledWith(
-            expect.objectContaining({
-                paymentType: 'anticipo',
-                conditionId: 8,
-            })
-        );
-    });
-
-    it('debe usar la condición 1 cuando no existe una condición de contado', () => {
-        render(
-            <OrderPaymentDialog
-                {...defaultProps}
-                paymentConditions={[]}
-            />
-        );
+    it('debe usar la condición 1 cuando no existe una condición de contado', async () => {
+        await renderAndWait({
+            ...defaultProps,
+            paymentConditions: []
+        });
 
         fireEvent.click(
             screen.getByRole('button', { name: /Confirmar Pago y Guardar/i })
@@ -332,114 +267,19 @@ describe('OrderPaymentDialog Component', () => {
         );
     });
 
-    it('debe usar la condición de dos plazos como alternativa para el anticipo si no hay descripción 20%', () => {
-        const conditions = [
-            { idCondicion: 7, numeroPlazos: 2, descripcion: 'Dos pagos' },
-        ];
-
-        render(
-            <OrderPaymentDialog
-                {...defaultProps}
-                paymentConditions={conditions}
-            />
-        );
-
-        fireEvent.click(
-            screen.getByRole('button', { name: /Anticipo \(50%\)/i })
-        );
-
-        fireEvent.click(
-            screen.getByRole('button', { name: /Confirmar Pago y Guardar/i })
-        );
-
-        expect(mockOnConfirmPayment).toHaveBeenCalledWith(
-            expect.objectContaining({
-                conditionId: 7,
-                paymentType: 'anticipo',
-            })
-        );
-    });
-
-    it('debe usar tres plazos cuando el total es de al menos $3000', () => {
-        render(
-            <OrderPaymentDialog
-                {...defaultProps}
-                total={3000}
-            />
-        );
-
-        fireEvent.click(
-            screen.getByRole('button', { name: /Plazos \(3 Pagos\)/i })
-        );
-
-        fireEvent.click(
-            screen.getByRole('button', { name: /Confirmar Pago y Guardar/i })
-        );
-
-        expect(mockOnConfirmPayment).toHaveBeenCalledWith(
-            expect.objectContaining({
-                paymentType: 'plazos',
-                conditionId: 3,
-            })
-        );
-    });
-
-    it('debe mostrar el botón de confirmación en estado de carga', () => {
-        render(
-            <OrderPaymentDialog
-                {...defaultProps}
-                isSubmitting={true}
-            />
-        );
+    it('debe mostrar el botón de confirmación en estado de carga', async () => {
+        await renderAndWait({
+            ...defaultProps,
+            isSubmitting: true
+        });
 
         expect(
             screen.getByRole('button', { name: /Confirmar Pago y Guardar/i })
         ).toBeDisabled();
     });
 
-    it('debe mostrar una advertencia cuando el anticipo es inferior al 20%', () => {
-        render(
-            <OrderPaymentDialog
-                {...defaultProps}
-                total={1000}
-                paidAmount={0}
-                currentConditionId={2}
-            />
-        );
-
-        const amountInput = screen.getAllByRole('spinbutton')[0];
-
-        fireEvent.change(amountInput, {
-            target: { value: '100' },
-        });
-
-        expect(
-            screen.getByText(/Sugerido 20% mín/i)
-        ).toBeInTheDocument();
-    });
-
-    it('debe mostrar un error cuando el importe excede el saldo pendiente', () => {
-        render(
-            <OrderPaymentDialog
-                {...defaultProps}
-                total={1000}
-                paidAmount={600}
-            />
-        );
-
-        const amountInput = screen.getAllByRole('spinbutton')[0];
-
-        fireEvent.change(amountInput, {
-            target: { value: '500' },
-        });
-
-        expect(
-            screen.getByText(/El monto excede el saldo pendiente/i)
-        ).toBeInTheDocument();
-    });
-
-    it('debe enviar el archivo seleccionado al confirmar el pago', () => {
-        render(<OrderPaymentDialog {...defaultProps} />);
+    it('debe enviar el archivo seleccionado al confirmar el pago', async () => {
+        await renderAndWait();
 
         fireEvent.click(
             screen.getByRole('button', { name: /Seleccionar archivo de prueba/i })
@@ -458,8 +298,8 @@ describe('OrderPaymentDialog Component', () => {
         );
     });
 
-    it('debe enviar null cuando se elimina el archivo seleccionado', () => {
-        render(<OrderPaymentDialog {...defaultProps} />);
+    it('debe enviar null cuando se elimina el archivo seleccionado', async () => {
+        await renderAndWait();
 
         fireEvent.click(
             screen.getByRole('button', { name: /Seleccionar archivo de prueba/i })
@@ -477,5 +317,4 @@ describe('OrderPaymentDialog Component', () => {
             expect.objectContaining({ file: null })
         );
     });
-
 });

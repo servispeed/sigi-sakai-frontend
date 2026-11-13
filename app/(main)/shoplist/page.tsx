@@ -12,6 +12,63 @@ import { Tag } from 'primereact/tag';
 import { comprasService } from '@/app/service/shopService';
 import { CatalogService } from '@/app/service/catalogService';
 
+const fetchProductMap = async () => {
+    const productMap = new Map();
+    try {
+        const products = await CatalogService.getProductos();
+        products.forEach((p: any) => {
+            const key = p.idProducto || p.id;
+            if (key) productMap.set(key, p.descripcion || p.nombre);
+        });
+    } catch (e) {
+        console.warn("No se pudieron cargar los productos para el mapeo");
+    }
+    return productMap;
+};
+
+const buildResumenInsumos = (detalles: any[], productMap: Map<any, any>) => {
+    if (!detalles || detalles.length === 0) return 'Sin insumos especificados';
+
+    return detalles.map((d: any) => {
+        if (!d.idProducto) return `${d.cantidad}x Insumo Genérico`;
+        const prodName = productMap.get(d.idProducto) || `Producto #${d.idProducto}`;
+        return `${d.cantidad}x ${prodName}`;
+    }).join(', ');
+};
+
+const enrichSolicitudesData = (pendientesData: any[], productMap: Map<any, any>) => {
+    return pendientesData.map((s: any) => ({
+        ...s,
+        resumenInsumos: buildResumenInsumos(s.detalles, productMap),
+        fechaFormateada: new Date(s.fechaCreacion).toLocaleDateString('es-MX', {
+            year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+        }),
+        ordenTexto: s.idOrden ? `Orden #${s.idOrden}` : 'Sin Orden'
+    }));
+};
+
+const renderNotas = (rowData: any) => {
+    return rowData.descripcionSolicitud || <span className="text-400 font-italic">Sin notas</span>;
+};
+
+const renderOrden = (rowData: any) => (
+    rowData.idOrden ? (
+        <span className="font-bold text-blue-600">
+            #{rowData.idOrden}
+        </span>
+    ) : (
+        <span className="text-500">N/A</span>
+    )
+);
+
+const renderEstatus = (rowData: any) => {
+    switch (rowData.idEstatus) {
+        case 1: return <Tag value="PENDIENTE" severity="warning" />;
+        case 3: return <Tag value="ATRASADA" severity="danger" />;
+        default: return <Tag value="DESCONOCIDO" severity="info" />;
+    }
+};
+
 const ListSolicitudesPendientesPage = () => {
     const router = useRouter();
     const toast = useRef<Toast>(null);
@@ -31,35 +88,8 @@ const ListSolicitudesPendientesPage = () => {
         setLoading(true);
         try {
             const pendientesData = await comprasService.getPendientes();
-            let productMap = new Map();
-            try {
-                const products = await CatalogService.getProductos();
-                products.forEach((p: any) => {
-                    const key = p.idProducto || p.id;
-                    if (key) productMap.set(key, p.descripcion || p.nombre);
-                });
-            } catch (e) {
-                console.warn("No se pudieron cargar los productos para el mapeo");
-            }
-
-            const enrichedData = pendientesData.map((s: any) => {
-                const resumenInsumos = s.detalles && s.detalles.length > 0
-                    ? s.detalles.map((d: any) => {
-                        if (!d.idProducto) return `${d.cantidad}x Insumo Genérico`;
-                        const prodName = productMap.get(d.idProducto) || `Producto #${d.idProducto}`;
-                        return `${d.cantidad}x ${prodName}`;
-                    }).join(', ')
-                    : 'Sin insumos especificados';
-
-                return {
-                    ...s,
-                    resumenInsumos,
-                    fechaFormateada: new Date(s.fechaCreacion).toLocaleDateString('es-MX', {
-                        year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-                    }),
-                    ordenTexto: s.idOrden ? `Orden #${s.idOrden}` : 'Sin Orden'
-                };
-            });
+            const productMap = await fetchProductMap();
+            const enrichedData = enrichSolicitudesData(pendientesData, productMap);
 
             setSolicitudes(enrichedData);
         } catch (err) {
@@ -107,28 +137,7 @@ const ListSolicitudesPendientesPage = () => {
         </div>
     );
 
-    const renderOrden = (rowData: any) => (
-        rowData.idOrden ? (
-            <span className="font-bold text-blue-600">
-                #{rowData.idOrden}
-            </span>
-        ) : (
-            <span className="text-500">N/A</span>
-        )
-    );
-
-    const renderEstatus = (rowData: any) => {
-        switch (rowData.idEstatus) {
-            case 1:
-                return <Tag value="PENDIENTE" severity="warning" />;
-            case 3:
-                return <Tag value="ATRASADA" severity="danger" />;
-            default:
-                return <Tag value="DESCONOCIDO" severity="info" />;
-        }
-    };
-
-const actionBodyTemplate = (rowData: any) => (
+    const actionBodyTemplate = (rowData: any) => (
         <div className="flex justify-content-center">
             <Button
                 label={rowData.idEstatus === 3 ? "Llegada atrasada" : "Comprar"}
@@ -172,8 +181,7 @@ const actionBodyTemplate = (rowData: any) => (
             >
                 <Column field="ordenTexto" header="Orden" body={renderOrden} sortable align="center" style={{ width: '6rem' }} />
                 <Column field="fechaFormateada" header="Fecha de solicitud" sortable style={{ width: '12rem' }} />
-                <Column field="descripcionSolicitud" header="Notas" style={{ minWidth: '14rem' }}
-                    body={(r) => r.descripcionSolicitud || <span className="text-400 font-italic">Sin notas</span>} />
+                <Column field="descripcionSolicitud" header="Notas" body={renderNotas} style={{ minWidth: '14rem' }} />
                 <Column field="resumenInsumos" header="Insumos requeridos" style={{ minWidth: '18rem' }} />
                 <Column field="idEstatus" header="Estado" body={renderEstatus} align="center" style={{ width: '8rem' }} />
                 <Column body={actionBodyTemplate} exportable={false} style={{ width: '10rem' }} align="center" />
