@@ -1,11 +1,15 @@
-
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import {
+    render,
+    screen,
+    fireEvent,
+    waitFor,
+    act
+} from '@testing-library/react';
 import '@testing-library/jest-dom';
 import UploadReceiptPage from './page';
 
 import { comprasService } from '@/app/service/shopService';
-import { OrderService } from '@/app/service/orderService';
 import { CatalogService } from '@/app/service/catalogService';
 
 const mockPush = jest.fn();
@@ -19,13 +23,14 @@ jest.mock('next/navigation', () => ({
 jest.mock('next/link', () => {
     const React = require('react');
 
-    const Link = ({ children, href }: any) => (
-        <>{children}</>
-    );
+    const Link = ({ children }: any) => <>{children}</>;
 
     Link.displayName = 'MockLink';
 
-    return { __esModule: true, default: Link };
+    return {
+        __esModule: true,
+        default: Link
+    };
 });
 
 jest.mock('primereact/card', () => ({
@@ -51,16 +56,19 @@ jest.mock('primereact/toast', () => {
 });
 
 jest.mock('primereact/button', () => ({
-    Button: ({ label, icon, tooltip, onClick, disabled }: any) => (
+    Button: ({
+        label,
+        icon,
+        tooltip,
+        onClick,
+        disabled,
+        loading
+    }: any) => (
         <button
             type="button"
-            aria-label={
-                label === 'Notificar'
-                    ? 'Enviar notificación'
-                    : tooltip || label || icon || 'button'
-            }
+            aria-label={tooltip || label || icon || 'button'}
             onClick={onClick}
-            disabled={disabled}
+            disabled={disabled || loading}
         >
             {icon && <span aria-hidden="true">{icon}</span>}
             {label}
@@ -68,30 +76,11 @@ jest.mock('primereact/button', () => ({
     )
 }));
 
-jest.mock('primereact/fileupload', () => ({
-    FileUpload: ({ uploadHandler, chooseLabel, accept, maxFileSize }: any) => (
-        <div>
-            <input
-                aria-label={chooseLabel}
-                type="file"
-                accept={accept}
-                data-max-file-size={maxFileSize}
-                onChange={(event) => {
-                    const file = event.currentTarget.files?.[0];
-
-                    if (file) {
-                        uploadHandler({ files: [file] });
-                    }
-                }}
-            />
-        </div>
-    )
-}));
-
 jest.mock('primereact/dialog', () => ({
     Dialog: ({ visible, header, children, onHide }: any) =>
         visible ? (
             <section role="dialog" aria-label={header}>
+                <h2>{header}</h2>
                 {children}
                 <button type="button" onClick={onHide}>
                     Cerrar diálogo
@@ -101,32 +90,73 @@ jest.mock('primereact/dialog', () => ({
 }));
 
 jest.mock('primereact/inputnumber', () => ({
-    InputNumber: ({ id, value, onValueChange, suffix }: any) => (
+    InputNumber: ({ value, onValueChange, placeholder }: any) => (
         <input
-            id={id}
-            aria-label="Cantidad de días de retraso"
+            type="number"
+            placeholder={placeholder}
             value={value ?? ''}
+            onChange={(event) =>
+                onValueChange?.({
+                    value:
+                        event.target.value === ''
+                            ? null
+                            : Number(event.target.value)
+                })
+            }
+        />
+    )
+}));
+
+jest.mock('primereact/fileupload', () => ({
+    FileUpload: ({ onSelect, chooseLabel, accept, maxFileSize }: any) => (
+        <input
+            type="file"
+            aria-label={chooseLabel}
+            accept={accept}
+            data-max-file-size={maxFileSize}
             onChange={(event) => {
-                const parsedValue = event.target.value
-                    ? Number(event.target.value)
+                const file = event.currentTarget.files?.[0];
+
+                if (file) {
+                    onSelect?.({ files: [file] });
+                }
+            }}
+        />
+    )
+}));
+
+jest.mock('primereact/calendar', () => ({
+    Calendar: ({ value, onChange, placeholder }: any) => (
+        <input
+            type="date"
+            aria-label="Nueva fecha de entrega"
+            placeholder={placeholder}
+            value={
+                value
+                    ? `${value.getFullYear()}-${String(
+                        value.getMonth() + 1
+                    ).padStart(2, '0')}-${String(
+                        value.getDate()
+                    ).padStart(2, '0')}`
+                    : ''
+            }
+            onChange={(event) => {
+                const date = event.target.value
+                    ? new Date(`${event.target.value}T12:00:00`)
                     : null;
 
-                onValueChange({ value: parsedValue });
+                onChange?.({ value: date });
             }}
-            data-suffix={suffix}
         />
     )
 }));
 
 jest.mock('@/app/service/shopService', () => ({
     comprasService: {
-        getPendientes: jest.fn()
-    }
-}));
-
-jest.mock('@/app/service/orderService', () => ({
-    OrderService: {
-        subirArchivo: jest.fn()
+        getPendientes: jest.fn(),
+        registrarCompraExitosa: jest.fn(),
+        registrarCompraAtrasada: jest.fn(),
+        registrarLlegadaAtrasada: jest.fn()
     }
 }));
 
@@ -136,9 +166,19 @@ jest.mock('@/app/service/catalogService', () => ({
     }
 }));
 
+const mockGetPendientes = comprasService.getPendientes as jest.Mock;
+const mockRegistrarCompraExitosa =
+    comprasService.registrarCompraExitosa as jest.Mock;
+const mockRegistrarCompraAtrasada =
+    comprasService.registrarCompraAtrasada as jest.Mock;
+const mockRegistrarLlegadaAtrasada =
+    comprasService.registrarLlegadaAtrasada as jest.Mock;
+const mockGetProductos = CatalogService.getProductos as jest.Mock;
+
 const mockSolicitud = {
     idSolicitud: 77,
     idOrden: 123,
+    idEstatus: 1,
     descripcionSolicitud: 'Material para impresión',
     fechaCreacion: '2026-01-15T10:30:00',
     detalles: [
@@ -177,19 +217,27 @@ const mockProductos = [
     }
 ];
 
-beforeEach(() => {
-    jest.clearAllMocks();
-
-    mockGetPendientes.mockResolvedValue([mockSolicitud]);
-    mockGetProductos.mockResolvedValue(mockProductos);
-    mockSubirArchivo.mockResolvedValue(undefined);
-});
-
-const mockGetPendientes = comprasService.getPendientes as jest.Mock;
-const mockGetProductos = CatalogService.getProductos as jest.Mock;
-const mockSubirArchivo = OrderService.subirArchivo as jest.Mock;
-
 const renderPage = () => render(<UploadReceiptPage />);
+
+const seleccionarComprobante = async () => {
+    const file = new File(['comprobante'], 'recibo.pdf', {
+        type: 'application/pdf'
+    });
+
+    const fileInput = screen.getByLabelText('Subir Recibo (PDF/JPG)');
+
+    fireEvent.change(fileInput, {
+        target: { files: [file] }
+    });
+
+    return file;
+};
+
+const ingresarCosto = () => {
+    fireEvent.change(screen.getByPlaceholderText('Ej. 450.50'), {
+        target: { value: '450.50' }
+    });
+};
 
 describe('UploadReceiptPage', () => {
     beforeEach(() => {
@@ -197,7 +245,48 @@ describe('UploadReceiptPage', () => {
 
         mockGetPendientes.mockResolvedValue([mockSolicitud]);
         mockGetProductos.mockResolvedValue(mockProductos);
-        mockSubirArchivo.mockResolvedValue(undefined);
+
+        mockRegistrarCompraExitosa.mockResolvedValue(undefined);
+        mockRegistrarCompraAtrasada.mockResolvedValue(undefined);
+        mockRegistrarLlegadaAtrasada.mockResolvedValue(undefined);
+    });
+
+    it('redirige al inicio dos segundos después de registrar la compra', async () => {
+        renderPage();
+
+        await screen.findByText('Material para impresión');
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Registrar compra exitosa'
+            })
+        );
+
+        ingresarCosto();
+        await seleccionarComprobante();
+
+        jest.useFakeTimers();
+
+        await act(async () => {
+            fireEvent.click(
+                screen.getByRole('button', {
+                    name: 'Guardar compra'
+                })
+            );
+
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        expect(mockRegistrarCompraExitosa).toHaveBeenCalled();
+
+        act(() => {
+            jest.advanceTimersByTime(2000);
+        });
+
+        expect(mockPush).toHaveBeenCalledWith('/');
+
+        jest.useRealTimers();
     });
 
     it('muestra el indicador de carga mientras obtiene los datos', () => {
@@ -224,8 +313,12 @@ describe('UploadReceiptPage', () => {
     it('muestra el identificador de la orden y los datos de la solicitud', async () => {
         renderPage();
 
-        expect(await screen.findByText('Orden N° 123')).toBeInTheDocument();
+        expect(
+            await screen.findByText('Orden N° 123')
+        ).toBeInTheDocument();
+
         expect(screen.getByText(/Solicitud #77/)).toBeInTheDocument();
+
         expect(
             screen.getByText('Materiales / Insumos requeridos:')
         ).toBeInTheDocument();
@@ -248,10 +341,15 @@ describe('UploadReceiptPage', () => {
     it('muestra el nombre y formato del producto cuando están disponibles', async () => {
         renderPage();
 
-        expect(await screen.findByText('Papel couché')).toBeInTheDocument();
+        expect(
+            await screen.findByText('Papel couché')
+        ).toBeInTheDocument();
+
         expect(screen.getByText('Formato: Carta')).toBeInTheDocument();
         expect(screen.getByText('Lona')).toBeInTheDocument();
-        expect(screen.getByText('Formato: Gran formato')).toBeInTheDocument();
+        expect(
+            screen.getByText('Formato: Gran formato')
+        ).toBeInTheDocument();
     });
 
     it('usa el identificador del producto si no existe en el catálogo', async () => {
@@ -270,10 +368,6 @@ describe('UploadReceiptPage', () => {
         mockGetPendientes.mockResolvedValueOnce([]);
 
         renderPage();
-
-        await waitFor(() => {
-            expect(mockGetPendientes).toHaveBeenCalledTimes(1);
-        });
 
         await waitFor(() => {
             expect(mockToastShow).toHaveBeenCalledWith(
@@ -298,10 +392,6 @@ describe('UploadReceiptPage', () => {
         renderPage();
 
         await waitFor(() => {
-            expect(mockGetPendientes).toHaveBeenCalledTimes(1);
-        });
-
-        await waitFor(() => {
             expect(mockToastShow).toHaveBeenCalledWith(
                 expect.objectContaining({
                     severity: 'error',
@@ -323,7 +413,9 @@ describe('UploadReceiptPage', () => {
             .spyOn(console, 'error')
             .mockImplementation(() => { });
 
-        mockGetProductos.mockRejectedValue(new Error('Catálogo no disponible'));
+        mockGetProductos.mockRejectedValue(
+            new Error('Catálogo no disponible')
+        );
 
         renderPage();
 
@@ -343,49 +435,273 @@ describe('UploadReceiptPage', () => {
         consoleErrorSpy.mockRestore();
     });
 
-    it('sube el comprobante de la orden y muestra confirmación', async () => {
+    it('abre el diálogo para registrar una compra exitosa', async () => {
         renderPage();
 
-        const file = new File(['comprobante'], 'recibo.pdf', {
-            type: 'application/pdf'
-        });
+        await screen.findByText('Material para impresión');
 
-        const fileInput = await screen.findByLabelText('Sube tu recibo');
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Registrar compra exitosa'
+            })
+        );
 
-        fireEvent.change(fileInput, {
-            target: { files: [file] }
-        });
+        expect(
+            screen.getByRole('dialog', {
+                name: 'Registrar compra exitosa'
+            })
+        ).toBeInTheDocument();
+
+        expect(
+            screen.getByText('Costo de los insumos ($)')
+        ).toBeInTheDocument();
+
+        expect(
+            screen.getByText('Comprobante o Ticket')
+        ).toBeInTheDocument();
+    });
+
+    it('registra una compra exitosa con costo y comprobante', async () => {
+        renderPage();
+
+        await screen.findByText('Material para impresión');
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Registrar compra exitosa'
+            })
+        );
+
+        ingresarCosto();
+
+        const file = await seleccionarComprobante();
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Guardar compra'
+            })
+        );
 
         await waitFor(() => {
-            expect(mockSubirArchivo).toHaveBeenCalledWith(123, file);
+            expect(mockRegistrarCompraExitosa).toHaveBeenCalledWith(
+                77,
+                450.5,
+                file
+            );
         });
 
         expect(mockToastShow).toHaveBeenCalledWith(
             expect.objectContaining({
                 severity: 'success',
-                summary: 'Comprobante Subido'
+                summary: 'Éxito',
+                detail: 'Compra registrada correctamente.'
             })
         );
     });
 
-    it('muestra un mensaje si falla la subida del comprobante', async () => {
+    it('no permite registrar una compra sin costo ni comprobante', async () => {
+        renderPage();
+
+        await screen.findByText('Material para impresión');
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Registrar compra exitosa'
+            })
+        );
+
+        expect(
+            screen.getByRole('button', {
+                name: 'Guardar compra'
+            })
+        ).toBeDisabled();
+
+        expect(mockRegistrarCompraExitosa).not.toHaveBeenCalled();
+    });
+
+    it('muestra un error cuando falla el registro de una compra exitosa', async () => {
         const consoleErrorSpy = jest
             .spyOn(console, 'error')
             .mockImplementation(() => { });
 
-        mockSubirArchivo.mockRejectedValue(new Error('Error al subir'));
+        mockRegistrarCompraExitosa.mockRejectedValueOnce(
+            new Error('Error al registrar la compra')
+        );
 
         renderPage();
 
-        const file = new File(['comprobante'], 'recibo.png', {
-            type: 'image/png'
+        await screen.findByText('Material para impresión');
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Registrar compra exitosa'
+            })
+        );
+
+        ingresarCosto();
+
+        await seleccionarComprobante();
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Guardar compra'
+            })
+        );
+
+        await waitFor(() => {
+            expect(mockToastShow).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    severity: 'error',
+                    summary: 'Error',
+                    detail: 'Ocurrió un error al procesar la solicitud.'
+                })
+            );
         });
 
-        const fileInput = await screen.findByLabelText('Sube tu recibo');
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+            expect.any(Error)
+        );
 
-        fireEvent.change(fileInput, {
-            target: { files: [file] }
+        expect(
+            screen.getByRole('dialog', {
+                name: 'Registrar compra exitosa'
+            })
+        ).toBeInTheDocument();
+
+        consoleErrorSpy.mockRestore();
+    });
+
+    it('abre el diálogo para reportar insumos atrasados', async () => {
+        renderPage();
+
+        await screen.findByText('Material para impresión');
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Reportar insumos atrasados'
+            })
+        );
+
+        expect(
+            screen.getByRole('dialog', {
+                name: 'Reportar insumos atrasados'
+            })
+        ).toBeInTheDocument();
+
+        expect(
+            screen.getByText('Nueva fecha de entrega')
+        ).toBeInTheDocument();
+    });
+
+    it('registra una compra atrasada con costo, comprobante y nueva fecha', async () => {
+        renderPage();
+
+        await screen.findByText('Material para impresión');
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Reportar insumos atrasados'
+            })
+        );
+
+        ingresarCosto();
+
+        const file = await seleccionarComprobante();
+
+        fireEvent.change(
+            screen.getByLabelText('Nueva fecha de entrega'),
+            {
+                target: { value: '2026-12-01' }
+            }
+        );
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Confirmar atraso'
+            })
+        );
+
+        await waitFor(() => {
+            expect(mockRegistrarCompraAtrasada).toHaveBeenCalledWith(
+                77,
+                450.5,
+                '2026-12-01',
+                file
+            );
         });
+
+        expect(mockToastShow).toHaveBeenCalledWith(
+            expect.objectContaining({
+                severity: 'success',
+                summary: 'Éxito',
+                detail: 'Compra y atraso registrados.'
+            })
+        );
+    });
+
+    it('no permite reportar un atraso sin ingresar todos los datos', async () => {
+        renderPage();
+
+        await screen.findByText('Material para impresión');
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Reportar insumos atrasados'
+            })
+        );
+
+        expect(
+            screen.getByRole('button', {
+                name: 'Confirmar atraso'
+            })
+        ).toBeDisabled();
+
+        ingresarCosto();
+
+        expect(
+            screen.getByRole('button', {
+                name: 'Confirmar atraso'
+            })
+        ).toBeDisabled();
+
+        expect(mockRegistrarCompraAtrasada).not.toHaveBeenCalled();
+    });
+
+    it('muestra un error cuando falla el registro de una compra atrasada', async () => {
+        const consoleErrorSpy = jest
+            .spyOn(console, 'error')
+            .mockImplementation(() => { });
+
+        mockRegistrarCompraAtrasada.mockRejectedValueOnce(
+            new Error('Error al registrar el atraso')
+        );
+
+        renderPage();
+
+        await screen.findByText('Material para impresión');
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Reportar insumos atrasados'
+            })
+        );
+
+        ingresarCosto();
+
+        await seleccionarComprobante();
+
+        fireEvent.change(
+            screen.getByLabelText('Nueva fecha de entrega'),
+            {
+                target: { value: '2026-12-01' }
+            }
+        );
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Confirmar atraso'
+            })
+        );
 
         await waitFor(() => {
             expect(mockToastShow).toHaveBeenCalledWith(
@@ -397,126 +713,206 @@ describe('UploadReceiptPage', () => {
         });
 
         expect(consoleErrorSpy).toHaveBeenCalledWith(
-            'Error al subir comprobante:',
             expect.any(Error)
         );
 
         consoleErrorSpy.mockRestore();
     });
 
-    it('redirige después de subir correctamente el comprobante', async () => {
-        jest.useFakeTimers();
+    it('muestra el panel de llegada cuando la solicitud está atrasada', async () => {
+        mockGetPendientes.mockResolvedValueOnce([
+            {
+                ...mockSolicitud,
+                idEstatus: 3
+            }
+        ]);
 
         renderPage();
 
-        const file = new File(['comprobante'], 'recibo.pdf', {
-            type: 'application/pdf'
-        });
+        expect(
+            await screen.findByText('Insumos atrasados')
+        ).toBeInTheDocument();
 
-        const fileInput = await screen.findByLabelText('Sube tu recibo');
+        expect(
+            screen.getByText(
+                'Esta solicitud está marcada como ATRASADA. El gasto ya fue cobrado y registrado.'
+            )
+        ).toBeInTheDocument();
 
-        fireEvent.change(fileInput, {
-            target: { files: [file] }
-        });
+        expect(
+            screen.getByRole('button', {
+                name: 'Confirmar llegada de los insumos'
+            })
+        ).toBeInTheDocument();
+    });
+
+    it('abre el diálogo para confirmar la llegada de insumos atrasados', async () => {
+        mockGetPendientes.mockResolvedValueOnce([
+            {
+                ...mockSolicitud,
+                idEstatus: 3
+            }
+        ]);
+
+        renderPage();
+
+        await screen.findByText('Insumos atrasados');
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Confirmar llegada de los insumos'
+            })
+        );
+
+        expect(
+            screen.getByRole('dialog', {
+                name: 'Llegada de insumos atrasados'
+            })
+        ).toBeInTheDocument();
+
+        expect(
+            screen.getByRole('button', {
+                name: 'Confirmar llegada'
+            })
+        ).toBeEnabled();
+    });
+
+    it('confirma la llegada de los insumos atrasados', async () => {
+        mockGetPendientes.mockResolvedValueOnce([
+            {
+                ...mockSolicitud,
+                idEstatus: 3
+            }
+        ]);
+
+        renderPage();
+
+        await screen.findByText('Insumos atrasados');
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Confirmar llegada de los insumos'
+            })
+        );
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Confirmar llegada'
+            })
+        );
 
         await waitFor(() => {
-            expect(mockSubirArchivo).toHaveBeenCalledWith(123, file);
+            expect(mockRegistrarLlegadaAtrasada).toHaveBeenCalledWith(77);
         });
-
-        await act(async () => {
-            jest.advanceTimersByTime(2000);
-        });
-
-        expect(mockPush).toHaveBeenCalledWith('/');
-
-        jest.useRealTimers();
-    });
-
-    it('abre el diálogo para notificar retraso', async () => {
-        renderPage();
-
-        await screen.findByText('Material para impresión');
-
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Notificar retraso (Días)' })
-        );
-
-        expect(
-            screen.getByRole('dialog', { name: 'Insumos Atrasados' })
-        ).toBeInTheDocument();
-    });
-
-    it('advierte si se intenta notificar sin ingresar días', async () => {
-        renderPage();
-
-        await screen.findByText('Material para impresión');
-
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Notificar retraso (Días)' })
-        );
-
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Enviar notificación' })
-        );
 
         expect(mockToastShow).toHaveBeenCalledWith(
             expect.objectContaining({
-                severity: 'warn',
-                summary: 'Días requeridos'
+                severity: 'success',
+                summary: 'Éxito',
+                detail: 'Llegada de insumos confirmada.'
+            })
+        );
+    });
+
+    it('muestra un error cuando falla la confirmación de llegada', async () => {
+        const consoleErrorSpy = jest
+            .spyOn(console, 'error')
+            .mockImplementation(() => { });
+
+        mockRegistrarLlegadaAtrasada.mockRejectedValueOnce(
+            new Error('Error al confirmar llegada')
+        );
+
+        mockGetPendientes.mockResolvedValueOnce([
+            {
+                ...mockSolicitud,
+                idEstatus: 3
+            }
+        ]);
+
+        renderPage();
+
+        await screen.findByText('Insumos atrasados');
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Confirmar llegada de los insumos'
+            })
+        );
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Confirmar llegada'
+            })
+        );
+
+        await waitFor(() => {
+            expect(mockToastShow).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    severity: 'error',
+                    summary: 'Error'
+                })
+            );
+        });
+
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+            expect.any(Error)
+        );
+
+        consoleErrorSpy.mockRestore();
+    });
+
+    it('cierra el diálogo al cancelar la operación', async () => {
+        renderPage();
+
+        await screen.findByText('Material para impresión');
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Registrar compra exitosa'
             })
         );
 
         expect(
-            screen.getByRole('dialog', { name: 'Insumos Atrasados' })
+            screen.getByRole('dialog', {
+                name: 'Registrar compra exitosa'
+            })
         ).toBeInTheDocument();
-    });
-
-    it('notifica el retraso cuando se ingresan días válidos', async () => {
-        renderPage();
-
-        await screen.findByText('Material para impresión');
 
         fireEvent.click(
-            screen.getByRole('button', { name: 'Notificar retraso (Días)' })
-        );
-
-        fireEvent.change(
-            screen.getByRole('textbox', {
-                name: 'Cantidad de días de retraso'
-            }),
-            { target: { value: '4' } }
-        );
-
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Enviar notificación' })
-        );
-
-        expect(mockToastShow).toHaveBeenCalledWith(
-            expect.objectContaining({
-                severity: 'info',
-                summary: 'Notificación Enviada',
-                detail: 'Se ha reportado un retraso de 4 días al equipo.'
+            screen.getByRole('button', {
+                name: 'Cancelar'
             })
         );
 
         expect(
-            screen.queryByRole('dialog', { name: 'Insumos Atrasados' })
+            screen.queryByRole('dialog', {
+                name: 'Registrar compra exitosa'
+            })
         ).not.toBeInTheDocument();
     });
 
-    it('cierra el diálogo de retraso al cancelar', async () => {
+    it('permite cerrar el diálogo mediante su acción de cierre', async () => {
         renderPage();
 
         await screen.findByText('Material para impresión');
 
         fireEvent.click(
-            screen.getByRole('button', { name: 'Notificar retraso (Días)' })
+            screen.getByRole('button', {
+                name: 'Reportar insumos atrasados'
+            })
         );
 
-        fireEvent.click(screen.getByRole('button', { name: /Cancelar/ }));
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Cerrar diálogo'
+            })
+        );
 
         expect(
-            screen.queryByRole('dialog', { name: 'Insumos Atrasados' })
+            screen.queryByRole('dialog', {
+                name: 'Reportar insumos atrasados'
+            })
         ).not.toBeInTheDocument();
     });
 });

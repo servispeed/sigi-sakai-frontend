@@ -246,7 +246,7 @@ describe('ListProductsPage', () => {
         it('muestra el título de la página', async () => {
             await renderPage();
 
-            expect(screen.getByRole('heading', { name: 'Lista de Productos' })).toBeInTheDocument();
+            expect(screen.getByRole('heading', { name: 'Lista de productos' })).toBeInTheDocument();
         });
 
         it('carga los productos desde el servicio', async () => {
