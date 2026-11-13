@@ -75,6 +75,21 @@ export const PurchaseActionDialog: React.FC<PurchaseActionDialogProps> = ({
         return false;
     };
 
+    const getSubmitButtonProps = () => {
+        if (isArrival) {
+            return { label: "Confirmar llegada", icon: "pi pi-check-circle", severity: "success" as const };
+        }
+        if (isSuccess) {
+            return { label: "Guardar compra", icon: "pi pi-save", severity: undefined };
+        }
+        if (isDelay) {
+            return { label: "Confirmar atraso", icon: "pi pi-calendar-plus", severity: "warning" as const };
+        }
+        return { label: "Confirmar", icon: "pi pi-check", severity: undefined };
+    };
+
+    const submitActionProps = getSubmitButtonProps();
+
     return (
         <Dialog
             header={getHeader()}
@@ -161,9 +176,9 @@ export const PurchaseActionDialog: React.FC<PurchaseActionDialogProps> = ({
                         disabled={isSubmitting}
                     />
                     <Button
-                        label={isArrival ? "Confirmar llegada" : isSuccess ? "Guardar compra" : "Confirmar atraso"}
-                        icon={isArrival ? "pi pi-check-circle" : isSuccess ? "pi pi-save" : "pi pi-calendar-plus"}
-                        severity={isArrival ? "success" : isSuccess ? undefined : "warning"}
+                        label={submitActionProps.label}
+                        icon={submitActionProps.icon}
+                        severity={submitActionProps.severity}
                         loading={isSubmitting}
                         onClick={handleSubmit}
                         disabled={!isFormValid()}

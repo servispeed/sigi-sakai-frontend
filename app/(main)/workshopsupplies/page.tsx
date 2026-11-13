@@ -196,8 +196,27 @@ const SuppliesVerificationPage = () => {
         }
     };
 
-    if (loading) return <div className="flex justify-content-center align-items-center h-screen"><i className="pi pi-spin pi-spinner text-4xl"></i></div>;
-    if (!orderData) return <div className="p-4 text-center">No se encontró la orden.</div>;
+    if (loading) {
+        return (
+            <>
+                <Toast ref={toast} />
+                <div className="flex justify-content-center align-items-center h-screen">
+                    <i className="pi pi-spin pi-spinner text-4xl"></i>
+                </div>
+            </>
+        );
+    }
+
+    if (!orderData) {
+        return (
+            <>
+                <Toast ref={toast} />
+                <div className="p-4 text-center">
+                    No se encontró la orden.
+                </div>
+            </>
+        );
+    }
 
     const renderCantidadRequerida = (rowData: any) => (
         <span className="text-600">

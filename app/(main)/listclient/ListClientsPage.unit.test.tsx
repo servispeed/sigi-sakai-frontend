@@ -29,6 +29,7 @@ jest.mock('primereact/toast', () => ({
 jest.mock('@/app/service/clientService', () => ({
     ClientService: {
         getAll: jest.fn(),
+        getPurchasesCount: jest.fn(),
         delete: jest.fn()
     }
 }));
@@ -51,11 +52,17 @@ jest.mock('next/link', () => ({
     }) => <>{children}</>,
 }));
 
-jest.mock('primereact/api', () => ({
-    FilterMatchMode: {
-        CONTAINS: 'contains'
-    }
-}));
+jest.mock('primereact/api', () => {
+    const actual = jest.requireActual('primereact/api');
+
+    return {
+        ...actual,
+        FilterMatchMode: {
+            ...actual.FilterMatchMode,
+            CONTAINS: 'contains'
+        }
+    };
+});
 
 jest.mock('primereact/button', () => ({
     Button: ({
@@ -322,6 +329,7 @@ describe('ListClientsPage', () => {
         jest.clearAllMocks();
 
         jest.mocked(ClientService.getAll).mockResolvedValue(mockClients as any);
+        jest.mocked(ClientService.getPurchasesCount).mockResolvedValue(3);
         jest.mocked(ClientService.delete).mockResolvedValue(undefined as any);
 
         jest.mocked(CatalogService.getRegimenesFiscales)
@@ -392,11 +400,11 @@ describe('ListClientsPage', () => {
             render(<ListClientsPage />);
 
             expect(
-                await screen.findAllByText('601 - General de Ley Personas Morales')
+                await screen.findAllByText('601 General de Ley Personas Morales')
             ).toHaveLength(2);
 
             expect(
-                screen.getAllByText('G03 - Gastos en general')
+                screen.getAllByText('G03 Gastos en general')
             ).toHaveLength(2);
         });
 
