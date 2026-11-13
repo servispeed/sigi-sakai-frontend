@@ -11,6 +11,8 @@ import PrintOrderPage from './page';
 import { OrderService } from '@/app/service/orderService';
 import { CatalogService } from '@/app/service/catalogService';
 import { ClientService } from '@/app/service/clientService';
+import { SobranteService } from '@/app/service/leftoverService';
+
 const originalFetch = global.fetch;
 
 beforeAll(() => {
@@ -42,6 +44,14 @@ jest.mock('@/app/service/catalogService', () => ({
 jest.mock('@/app/service/clientService', () => ({
     ClientService: {
         getById: jest.fn(),
+    },
+}));
+
+jest.mock('@/app/service/leftoverService', () => ({
+    SobranteService: {
+        getSobrantesPorCliente: jest.fn(),
+        registrarSobrante: jest.fn(),
+        consumirSobrante: jest.fn(),
     },
 }));
 
@@ -232,6 +242,36 @@ const mockClient = {
     telefono: '5551234567',
 };
 
+jest.mock('@/app/components/LeftoversDialog', () => ({
+    LeftoversDialog: ({ visible, onConfirm, isSubmitting }: any) =>
+        visible ? (
+            <div role="dialog">
+                <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={() => onConfirm(false, {})}
+                >
+                    Confirmar finalización
+                </button>
+            </div>
+        ) : null,
+}));
+
+jest.mock('@/app/components/ConsumeLeftoverDialog', () => ({
+    ConsumeLeftoverDialog: ({ visible, onConfirm, isConsuming }: any) =>
+        visible ? (
+            <div role="dialog">
+                <button
+                    type="button"
+                    disabled={isConsuming}
+                    onClick={() => onConfirm(1)}
+                >
+                    Confirmar consumo
+                </button>
+            </div>
+        ) : null,
+}));
+
 describe('PrintOrderPage', () => {
     beforeEach(() => {
         jest.clearAllMocks();
@@ -261,6 +301,14 @@ describe('PrintOrderPage', () => {
         jest.mocked(OrderService.getArchivoUrlVerificado).mockResolvedValue(
             null as any
         );
+
+        jest.mocked(SobranteService.getSobrantesPorCliente).mockResolvedValue({
+            content: [],
+        } as any);
+
+        jest.mocked(SobranteService.registrarSobrante).mockResolvedValue({} as any);
+
+        jest.mocked(SobranteService.consumirSobrante).mockResolvedValue({} as any);
     });
 
     it('muestra el spinner mientras se carga la orden', () => {
@@ -520,11 +568,17 @@ describe('PrintOrderPage', () => {
     it('marca la orden como lista para entrega', async () => {
         render(<PrintOrderPage />);
 
-        const finishButton = await screen.findByRole('button', {
-            name: /orden lista para entrega/i,
-        });
+        fireEvent.click(
+            await screen.findByRole('button', {
+                name: /orden lista para entrega/i,
+            })
+        );
 
-        fireEvent.click(finishButton);
+        fireEvent.click(
+            await screen.findByRole('button', {
+                name: /confirmar finalización/i,
+            })
+        );
 
         await waitFor(() => {
             expect(OrderService.avanzarEstatus).toHaveBeenCalledWith(
@@ -558,23 +612,31 @@ describe('PrintOrderPage', () => {
         try {
             render(<PrintOrderPage />);
 
-            const finishButton = await screen.findByRole('button', {
-                name: /orden lista para entrega/i,
-            });
+            fireEvent.click(
+                await screen.findByRole('button', {
+                    name: /orden lista para entrega/i,
+                })
+            );
 
-            fireEvent.click(finishButton);
+            fireEvent.click(
+                await screen.findByRole('button', {
+                    name: /confirmar finalización/i,
+                })
+            );
 
             await waitFor(() => {
                 expect(mockShowToast).toHaveBeenCalledWith(
                     expect.objectContaining({
                         severity: 'error',
                         summary: 'Error',
-                        detail: 'No se pudo finalizar la orden.',
+                        detail: 'Ocurrió un problema al procesar la orden o los sobrantes.',
                     })
                 );
             });
 
-            expect(consoleErrorSpy).toHaveBeenCalled();
+            expect(consoleErrorSpy).toHaveBeenCalledWith(
+                expect.any(Error)
+            );
         } finally {
             consoleErrorSpy.mockRestore();
         }
@@ -797,15 +859,19 @@ describe('PrintOrderPage', () => {
     });
 
     it('utiliza el usuario predeterminado cuando no existe en localStorage', async () => {
-        const user = userEvent.setup();
-
         localStorage.removeItem('user');
 
         render(<PrintOrderPage />);
 
-        await user.click(
+        fireEvent.click(
             await screen.findByRole('button', {
                 name: /orden lista para entrega/i,
+            })
+        );
+
+        fireEvent.click(
+            await screen.findByRole('button', {
+                name: /confirmar finalización/i,
             })
         );
 

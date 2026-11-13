@@ -70,7 +70,7 @@ const Counter = () => {
         rows: 10,
         page: 0
     });
-    const [expandedRows, setExpandedRows] = useState<any>([]);
+    const [expandedRows, setExpandedRows] = useState<any[]>([]);
     // VARIABLES TEMPORALES (Inputs)
     const [selectedProduct, setSelectedProduct] = useState<any>(null);
     const [pendingProduct, setPendingProduct] = useState<Producto | null>(null);
@@ -126,36 +126,64 @@ const Counter = () => {
         }
     }, [ShowOrdersList]);
 
-    const loadList = async (type: 'quotes' | 'orders', page: number, rows: number) => {
+    const loadList = async (
+        type: 'quotes' | 'orders',
+        page: number,
+        rows: number
+    ) => {
         setIsLoadingList(true);
+
         try {
             let response;
+
             if (type === 'quotes') {
                 response = await OrderService.getCotizacionesYCanceladas(page, rows);
             } else {
                 response = await OrderService.getOrdenesActivas(page, rows);
             }
+
             const data = response.content || response || [];
+
             const total = response.page?.totalElements
-                || response.totalElements
-                || data.length;
+                ?? response.totalElements
+                ?? data.length;
+
             const processedData = data.map((item: any) => {
-                const designerName = designers.find((d: any) => d.value === item.idUsuarioDisenador)?.label || 'Sin Asignar';
-                return { ...item, nombreDisenador: designerName };
+                const designerName =
+                    designers.find(
+                        (d: any) => d.value === item.idUsuarioDisenador
+                    )?.label ?? 'Sin Asignar';
+
+                return {
+                    ...item,
+                    nombreDisenador: designerName
+                };
             });
-            processedData.sort((a: any, b: any) => {
-                if (a.nombreDisenador < b.nombreDisenador) return -1;
-                if (a.nombreDisenador > b.nombreDisenador) return 1;
-                return 0;
-            });
+
+            processedData.sort((a: any, b: any) =>
+                a.nombreDisenador.localeCompare(b.nombreDisenador)
+            );
+
+            const expandedGroups = processedData.filter(
+                (row: any, index: number, array: any[]) =>
+                    array.findIndex(
+                        (item: any) =>
+                            item.nombreDisenador === row.nombreDisenador
+                    ) === index
+            );
+
+            setExpandedRows(expandedGroups);
+
             if (type === 'quotes') {
                 setQuotesList(processedData);
             } else {
                 setOrdersList(processedData);
             }
+
             setTotalRecords(total);
+
         } catch (error) {
-            console.error("Error cargando lista", error);
+            console.error('Error cargando lista', error);
         } finally {
             setIsLoadingList(false);
         }
