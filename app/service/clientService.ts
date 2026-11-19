@@ -50,8 +50,12 @@ export const ClientService = {
     },
 
     async getPurchasesCount(idCliente: number): Promise<number> {
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        return idCliente % 2 === 0 ? 2 : 4;
+        const res = await apiClient(`${API_BASE_URL}/ordenes/cliente/${idCliente}/compras-completadas`);
+        if (!res.ok) {
+            throw new Error("No se pudo obtener el total de compras completadas del cliente");
+        }
+        const data: { totalCompras?: number } = await res.json();
+        return data.totalCompras ?? 0;
     },
 
     async uploadDocuments(idCliente: number, files: { csf: File; comprobanteDomicilio: File; ine: File }) {

@@ -18,9 +18,29 @@ export interface SolicitudCompra {
     detalles: DetalleSolicitud[];
 }
 
+export interface PageResponse<T> {
+    content: T[];
+    totalElements: number;
+    totalPages: number;
+    size: number;
+    number: number;
+    page?: {
+        totalElements: number;
+        totalPages: number;
+        size: number;
+        number: number;
+    };
+}
+
 export const comprasService = {
-    async getPendientes(): Promise<SolicitudCompra[]> {
-        const response = await apiClient(`${API_BASE_URL}/compras/pendientes`, {
+    async getPendientes(page: number = 0, size: number = 10, sort: string = 'fechaCreacion,desc'): Promise<PageResponse<SolicitudCompra>> {
+        const params = new URLSearchParams({
+            page: page.toString(),
+            size: size.toString(),
+            sort
+        });
+
+        const response = await apiClient(`${API_BASE_URL}/compras/pendientes?${params.toString()}`, {
             method: 'GET'
         });
 

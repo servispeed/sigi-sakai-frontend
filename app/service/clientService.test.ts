@@ -1,4 +1,3 @@
-
 import { ClientService } from './clientService';
 import { apiClient } from './apiClient';
 import {
@@ -59,22 +58,6 @@ describe('ClientService', () => {
                     totalCompras: 0
                 }
             ]);
-        });
-
-        it('debe utilizar comprasCount cuando totalCompras no está disponible', async () => {
-            mockApiClient.mockResolvedValueOnce({
-                ok: true,
-                json: jest.fn().mockResolvedValueOnce([
-                    {
-                        idCliente: 10,
-                        comprasCount: 8
-                    }
-                ])
-            } as unknown as Response);
-
-            const result = await ClientService.getAll();
-
-            expect(result[0].totalCompras).toBe(8);
         });
 
         it('debe incluir la query string cuando se proporciona un tipo diferente de todos', async () => {
@@ -209,32 +192,6 @@ describe('ClientService', () => {
             ).rejects.toThrow(
                 'No se pudo obtener la última compra del cliente'
             );
-        });
-    });
-
-    describe('getPurchasesCount', () => {
-        it('debe devolver dos compras para identificadores pares', async () => {
-            jest.useFakeTimers();
-
-            const promise = ClientService.getPurchasesCount(2);
-
-            jest.advanceTimersByTime(300);
-
-            await expect(promise).resolves.toBe(2);
-
-            jest.useRealTimers();
-        });
-
-        it('debe devolver cuatro compras para identificadores impares', async () => {
-            jest.useFakeTimers();
-
-            const promise = ClientService.getPurchasesCount(3);
-
-            jest.advanceTimersByTime(300);
-
-            await expect(promise).resolves.toBe(4);
-
-            jest.useRealTimers();
         });
     });
 

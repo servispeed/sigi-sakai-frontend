@@ -55,8 +55,14 @@ const ListClientsPage = () => {
     const [loading, setLoading] = useState(false);
     const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
     const [ultimaCompraDialog, setUltimaCompraDialog] = useState(false);
+
+    // Estados para validación y solicitud de crédito
     const [creditDialogVisible, setCreditDialogVisible] = useState(false);
     const [clientForCredit, setClientForCredit] = useState<Client | null>(null);
+    const [checkingClientId, setCheckingClientId] = useState<number | null>(null);
+    const [insufficientDialogVisible, setInsufficientDialogVisible] = useState(false);
+    const [insufficientInfo, setInsufficientInfo] = useState<{ nombre: string; compras: number } | null>(null);
+
     const [isManagementUser, setIsManagementUser] = useState(false);
     const [globalFilterValue, setGlobalFilterValue] = useState('');
     const [filters, setFilters] = useState({
@@ -97,7 +103,6 @@ const ListClientsPage = () => {
                 .toUpperCase();
 
             setIsManagementUser(MANAGEMENT_ROLES.includes(userRole));
-
         } catch (error) {
             console.error('Error al identificar el rol del usuario', error);
             setIsManagementUser(false);
@@ -108,28 +113,7 @@ const ListClientsPage = () => {
         setLoading(true);
         try {
             const data = await ClientService.getAll(tipo);
-
-            const dataWithCounts = await Promise.all(
-                data.map(async (item) => {
-                    if (!item.id) return item;
-
-                    try {
-                        const count = await ClientService.getPurchasesCount(item.id);
-
-                        return {
-                            ...item,
-                            totalCompras: count
-                        };
-                    } catch {
-                        return {
-                            ...item,
-                            totalCompras: item.totalCompras ?? 0
-                        };
-                    }
-                })
-            );
-
-            setClients(dataWithCounts);
+            setClients(data);
         } catch (err) {
             toast.current?.show({
                 severity: 'error',
@@ -161,7 +145,6 @@ const ListClientsPage = () => {
                     value: u.idUsoCfdi
                 }))
             );
-
         } catch (error) {
             console.error('Error cargando catálogos', error);
         }
@@ -173,10 +156,32 @@ const ListClientsPage = () => {
         setUltimaCompraDialog(true);
     };
 
-    const handleOpenCreditDialog = (c: Client) => {
-        if (!isManagementUser || (c.totalCompras || 0) <= 3) return;
-        setClientForCredit(c);
-        setCreditDialogVisible(true);
+    const handleOpenCreditDialog = async (c: Client) => {
+        if (!isManagementUser || !c.id) return;
+
+        setCheckingClientId(c.id);
+        try {
+            const totalCompras = await ClientService.getPurchasesCount(c.id);
+
+            if (totalCompras > 3) {
+                setClientForCredit({ ...c, totalCompras });
+                setCreditDialogVisible(true);
+            } else {
+                setInsufficientInfo({
+                    nombre: c.nombre,
+                    compras: totalCompras
+                });
+                setInsufficientDialogVisible(true);
+            }
+        } catch (error) {
+            toast.current?.show({
+                severity: 'error',
+                summary: 'Error de validación',
+                detail: 'No se pudo verificar el historial de compras del cliente.'
+            });
+        } finally {
+            setCheckingClientId(null);
+        }
     };
 
     const openNew = () => {
@@ -212,7 +217,6 @@ const ListClientsPage = () => {
                 summary: 'Eliminado',
                 detail: 'Cliente eliminado'
             });
-
         } catch (error) {
             toast.current?.show({
                 severity: 'error',
@@ -236,19 +240,6 @@ const ListClientsPage = () => {
 
     const getCfdiLabel = (id: number | null) =>
         cfdiOptions.find(op => op.value === id)?.label || '-';
-
-    const comprasBodyTemplate = (rowData: Client) => {
-        const count = rowData.totalCompras || 0;
-        return (
-            <div className="flex align-items-center gap-2">
-                <span className="text-xs font-semibold">Compras:</span>
-                <Tag
-                    value={`${count}/3`}
-                    severity={count >= 3 ? 'success' : 'warning'}
-                />
-            </div>
-        );
-    };
 
     const creditoStatusBodyTemplate = (rowData: Client) => {
         if (!rowData.creditoHabilitado) {
@@ -315,19 +306,20 @@ const ListClientsPage = () => {
     );
 
     const actionBodyTemplate = (rowData: Client) => {
-        const canRequestCredit = (rowData.totalCompras || 0) > 3;
         const hasCredit = rowData.creditoHabilitado;
+        const isCheckingThisRow = checkingClientId === rowData.id;
 
         return (
             <div className="flex gap-1 justify-content-center align-items-center">
-
-                {isManagementUser && canRequestCredit && !hasCredit && (
+                {isManagementUser && !hasCredit && (
                     <Button
                         icon="pi pi-id-card"
                         rounded
                         text
                         severity="success"
-                        tooltip="Solicitar y asignar crédito"
+                        loading={isCheckingThisRow}
+                        disabled={checkingClientId !== null && !isCheckingThisRow}
+                        tooltip="Validar y solicitar crédito"
                         onClick={() => handleOpenCreditDialog(rowData)}
                     />
                 )}
@@ -381,6 +373,17 @@ const ListClientsPage = () => {
         </>
     );
 
+    const insufficientDialogFooter = (
+        <Button
+            label="Entendido"
+            icon="pi pi-check"
+            onClick={() => {
+                setInsufficientDialogVisible(false);
+                setInsufficientInfo(null);
+            }}
+        />
+    );
+
     return (
         <div className="card">
             <Toast ref={toast} />
@@ -420,12 +423,6 @@ const ListClientsPage = () => {
                     header="Nombre"
                     sortable
                     style={{ minWidth: '10rem' }}
-                />
-
-                <Column
-                    body={comprasBodyTemplate}
-                    header="Compras"
-                    style={{ minWidth: '9rem' }}
                 />
 
                 <Column
@@ -519,6 +516,40 @@ const ListClientsPage = () => {
                     });
                 }}
             />
+
+            {/* Dialog informativo cuando no cumple con más de 3 compras */}
+            <Dialog
+                visible={insufficientDialogVisible}
+                style={{ width: '30rem' }}
+                breakpoints={{ '960px': '75vw', '641px': '90vw' }}
+                header="Criterio de crédito no cumplido"
+                modal
+                footer={insufficientDialogFooter}
+                onHide={() => {
+                    setInsufficientDialogVisible(false);
+                    setInsufficientInfo(null);
+                }}
+            >
+                <div className="flex align-items-start gap-3">
+                    <i
+                        className="pi pi-info-circle text-orange-500 mt-1"
+                        style={{ fontSize: '2rem' }}
+                    />
+                    <div className="flex flex-column gap-2">
+                        <span>
+                            El cliente <b>{insufficientInfo?.nombre}</b> aún no cumple con el requisito mínimo para solicitar una línea de crédito.
+                        </span>
+                        <div className="surface-100 p-2 border-round text-sm">
+                            <div>
+                                <b>Compras completadas actuales:</b> {insufficientInfo?.compras ?? 0}
+                            </div>
+                            <div>
+                                <b>Requisito mínimo:</b> Más de 3 compras completadas (mínimo 4)
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </Dialog>
 
             <Dialog
                 visible={deleteClientDialog}

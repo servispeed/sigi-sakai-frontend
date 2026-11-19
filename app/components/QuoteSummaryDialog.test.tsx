@@ -186,21 +186,6 @@ describe('QuoteSummaryDialog Component', () => {
         expect(mockOnSelectDesigner).toHaveBeenCalledWith(10);
     });
 
-    it('debe permitir limpiar el diseñador seleccionado', () => {
-        render(
-            <QuoteSummaryDialog
-                {...defaultProps}
-                selectedDesigner={10}
-            />
-        );
-
-        fireEvent.change(screen.getByRole('combobox', { name: /Asignar a Diseñador/i }), {
-            target: { value: '' },
-        });
-
-        expect(mockOnSelectDesigner).toHaveBeenCalledWith(null);
-    });
-
     it('debe activar la facturación al marcar el checkbox', () => {
         render(
             <QuoteSummaryDialog

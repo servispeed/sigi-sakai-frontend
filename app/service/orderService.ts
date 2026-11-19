@@ -20,6 +20,22 @@ export interface OrdenDTO {
     detalles: DetalleOrdenDTO[];
 }
 
+export interface ClienteConSaldoDTO {
+    idCliente: number;
+    cliente: {
+        idCliente?: number;
+        id?: number;
+        nombre: string;
+        email?: string | null;
+        telefono?: string | null;
+        rfc?: string | null;
+        estatusCredito?: string | null;
+        diasCredito?: number | null;
+        limiteCredito?: number | null;
+    };
+    saldoDeudor: number;
+}
+
 export const OrderService = {
 
     async crearOrden(data: NuevaOrdenRequest) {
@@ -103,12 +119,25 @@ export const OrderService = {
         }
     },
 
-    async registrarPago(idOrden: number, pago: { monto: number; referencia: string; idUsuario: number }) {
-        const res = await apiClient(`${API_BASE_URL}/ordenes/${idOrden}/pagos`, {
+    async registrarPago(idOrden: number | null, pago: { idCliente: number; monto: number; referencia?: string; idUsuario: number; }) {
+        const res = await apiClient(`${API_BASE_URL}/ordenes/pagos`, {
             method: 'POST',
-            body: JSON.stringify(pago)
+            headers: {
+                'X-User-Id': pago.idUsuario.toString()
+            },
+            body: JSON.stringify({
+                idCliente: pago.idCliente,
+                idOrden: idOrden ?? null,
+                monto: pago.monto,
+                referencia: pago.referencia || 'Sin referencia'
+            })
         });
-        if (!res.ok) throw new Error('Error al registrar pago');
+
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => null);
+            throw new Error(errorData?.message || 'Error al registrar pago');
+        }
+
         return await res.json();
     },
 
@@ -197,5 +226,22 @@ export const OrderService = {
             throw new Error("Error al obtener órdenes del diseñador");
         }
         return await response.json();
-    }
+    },
+
+    async getClientesConSaldoDeudor(page: number = 0, size: number = 10) {
+        const params = new URLSearchParams({
+            page: page.toString(),
+            size: size.toString()
+        });
+
+        const res = await apiClient(`${API_BASE_URL}/ordenes/clientes/saldos?${params.toString()}`, {
+            method: 'GET'
+        });
+
+        if (!res.ok) {
+            throw new Error('Error al obtener clientes con saldo deudor');
+        }
+
+        return await res.json();
+    },
 };
