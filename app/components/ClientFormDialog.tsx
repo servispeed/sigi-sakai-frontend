@@ -69,17 +69,30 @@ export const ClientFormDialog = ({ visible, onHide, onSuccess, clientToEdit }: P
         } catch (e) { console.error(e); }
     };
 
+    const isRfcExceedingMax = Boolean(clientData.rfc && clientData.rfc.trim().length > 13);
+
     const handleSave = async () => {
         setSubmitted(true);
         if (!clientData.nombre.trim()) return;
 
+        const cleanRfc = clientData.rfc?.trim().toUpperCase() || null;
+
+        if (cleanRfc && cleanRfc.length > 13) {
+            toast.current?.show({
+                severity: 'warn',
+                summary: 'R.F.C. inválido',
+                detail: 'El R.F.C. debe tener un máximo de 13 caracteres.'
+            });
+            return;
+        }
+
         const payload: ClientRequest = {
             ...clientData,
-            email: clientData.email?.trim() === '' ? null : clientData.email,
-            telefono: clientData.telefono?.trim() === '' ? null : clientData.telefono,
-            rfc: clientData.rfc?.trim() === '' ? null : clientData.rfc,
-            razonSocial: clientData.razonSocial?.trim() === '' ? null : clientData.razonSocial,
-            direccionFiscal: clientData.direccionFiscal?.trim() === '' ? null : clientData.direccionFiscal,
+            email: clientData.email?.trim() === '' ? null : clientData.email?.trim() || null,
+            telefono: clientData.telefono?.trim() === '' ? null : clientData.telefono?.trim() || null,
+            rfc: cleanRfc,
+            razonSocial: clientData.razonSocial?.trim() === '' ? null : clientData.razonSocial?.trim() || null,
+            direccionFiscal: clientData.direccionFiscal?.trim() === '' ? null : clientData.direccionFiscal?.trim() || null,
             idUsoCfdi: clientData.idUsoCfdi,
             idRegimenFiscal: clientData.idRegimenFiscal
         };
@@ -93,7 +106,6 @@ export const ClientFormDialog = ({ visible, onHide, onSuccess, clientToEdit }: P
                 toast.current?.show({ severity: 'success', summary: 'Éxito', detail: 'Cliente actualizado' });
             } else {
                 const response = await ClientService.create(payload);
-                console.log("Respuesta RAW del Backend al crear:", response);
                 resultClient = {
                     ...response,
                     id: response.id || response.idCliente,
@@ -115,7 +127,12 @@ export const ClientFormDialog = ({ visible, onHide, onSuccess, clientToEdit }: P
     };
 
     const onInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>, name: string) => {
-        const val = (e.target && e.target.value) || '';
+        let val = (e.target && e.target.value) || '';
+
+        if (name === 'rfc') {
+            val = val.toUpperCase().replace(/[^A-Z0-9&Ñ]/g, '').slice(0, 13);
+        }
+
         setClientData(prev => ({ ...prev, [name]: val }));
     };
 
@@ -158,8 +175,21 @@ export const ClientFormDialog = ({ visible, onHide, onSuccess, clientToEdit }: P
                     </div>
                     <div className="col-12"><Divider align="left" className="my-2"><span className="p-tag p-tag-rounded text-xs">Datos Fiscales</span></Divider></div>
                     <div className="field col-12 mb-2">
-                        <label htmlFor="rfc" className="font-bold block mb-1">R.F.C.</label>
-                        <InputText id="rfc" value={clientData.rfc || ''} onChange={(e) => onInputChange(e, 'rfc')} />
+                        <div className="flex justify-content-between align-items-center mb-1">
+                            <label htmlFor="rfc" className="font-bold">R.F.C.</label>
+                            <small className="text-500">{(clientData.rfc || '').length}/13</small>
+                        </div>
+                        <InputText
+                            id="rfc"
+                            value={clientData.rfc || ''}
+                            maxLength={13}
+                            onChange={(e) => onInputChange(e, 'rfc')}
+                            placeholder="Máximo 13 caracteres"
+                            className={classNames({ 'p-invalid': isRfcExceedingMax })}
+                        />
+                        {isRfcExceedingMax && (
+                            <small className="p-error block">El R.F.C. no puede exceder los 13 caracteres.</small>
+                        )}
                     </div>
                     <div className="field col-12 mb-2">
                         <label htmlFor="direccionFiscal" className="font-bold block mb-1">Dirección Fiscal</label>

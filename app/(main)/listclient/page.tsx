@@ -163,7 +163,7 @@ const ListClientsPage = () => {
         try {
             const totalCompras = await ClientService.getPurchasesCount(c.id);
 
-            if (totalCompras > 3) {
+            if (totalCompras >= 3) {
                 setClientForCredit({ ...c, totalCompras });
                 setCreditDialogVisible(true);
             } else {
@@ -544,7 +544,7 @@ const ListClientsPage = () => {
                                 <b>Compras completadas actuales:</b> {insufficientInfo?.compras ?? 0}
                             </div>
                             <div>
-                                <b>Requisito mínimo:</b> Más de 3 compras completadas (mínimo 4)
+                                <b>Requisito mínimo:</b> 3 compras completadas
                             </div>
                         </div>
                     </div>
