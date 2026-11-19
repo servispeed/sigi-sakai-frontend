@@ -193,26 +193,130 @@ describe('OrderService', () => {
             );
             expect(result).toEqual(mockData);
         });
-    });
-    describe('Operaciones Adicionales de Ordenes', () => {
-        it('debe registrar un pago correctamente', async () => {
-            const pagoPayload = { monto: 500, referencia: 'REF123', idUsuario: 1 };
+
+        it('debe obtener los clientes con saldo deudor', async () => {
+            const mockSaldos = [{ idCliente: 1, saldoDeudor: 1200 }];
             mockApiClient.mockResolvedValueOnce({
                 ok: true,
-                json: jest.fn().mockResolvedValueOnce({ idPago: 1, ...pagoPayload })
+                json: jest.fn().mockResolvedValueOnce(mockSaldos),
+            } as unknown as Response);
+
+            const result = await OrderService.getClientesConSaldoDeudor(0, 10);
+
+            expect(mockApiClient).toHaveBeenCalledWith(
+                expect.stringContaining('/ordenes/clientes/saldos'),
+                expect.objectContaining({ method: 'GET' })
+            );
+            expect(result).toEqual(mockSaldos);
+        });
+    });
+
+    describe('Operaciones Adicionales de Ordenes', () => {
+        it('debe registrar un pago correctamente enviando X-User-Id y el body esperado', async () => {
+            const pagoPayload = {
+                idCliente: 1,
+                monto: 500,
+                referencia: 'REF123',
+                idUsuario: 7
+            };
+
+            mockApiClient.mockResolvedValueOnce({
+                ok: true,
+                json: jest.fn().mockResolvedValueOnce({
+                    idPago: 1,
+                    idCliente: 1,
+                    idOrden: 10,
+                    monto: 500,
+                    referencia: 'REF123'
+                })
             } as unknown as Response);
 
             const res = await OrderService.registrarPago(10, pagoPayload);
+
             expect(mockApiClient).toHaveBeenCalledWith(
-                expect.stringContaining('/ordenes/10/pagos'),
-                expect.objectContaining({ method: 'POST', body: JSON.stringify(pagoPayload) })
+                expect.stringContaining('/ordenes/pagos'),
+                expect.objectContaining({
+                    method: 'POST',
+                    headers: {
+                        'X-User-Id': '7'
+                    },
+                    body: JSON.stringify({
+                        idCliente: 1,
+                        idOrden: 10,
+                        monto: 500,
+                        referencia: 'REF123'
+                    })
+                })
             );
-            expect(res).toEqual({ idPago: 1, ...pagoPayload });
+
+            expect(res).toEqual({
+                idPago: 1,
+                idCliente: 1,
+                idOrden: 10,
+                monto: 500,
+                referencia: 'REF123'
+            });
+        });
+
+        it('debe usar "Sin referencia" e idOrden null cuando no se proporcionan', async () => {
+            mockApiClient.mockResolvedValueOnce({
+                ok: true,
+                json: jest.fn().mockResolvedValueOnce({ idPago: 2 })
+            } as unknown as Response);
+
+            await OrderService.registrarPago(null, {
+                idCliente: 3,
+                monto: 250,
+                idUsuario: 9
+            });
+
+            expect(mockApiClient).toHaveBeenCalledWith(
+                expect.stringContaining('/ordenes/pagos'),
+                expect.objectContaining({
+                    method: 'POST',
+                    headers: {
+                        'X-User-Id': '9'
+                    },
+                    body: JSON.stringify({
+                        idCliente: 3,
+                        idOrden: null,
+                        monto: 250,
+                        referencia: 'Sin referencia'
+                    })
+                })
+            );
         });
 
         it('debe lanzar error si falla el registro de pago', async () => {
-            mockApiClient.mockResolvedValueOnce({ ok: false } as unknown as Response);
-            await expect(OrderService.registrarPago(10, { monto: 10, referencia: '', idUsuario: 1 })).rejects.toThrow('Error al registrar pago');
+            mockApiClient.mockResolvedValueOnce({
+                ok: false,
+                json: jest.fn().mockResolvedValueOnce(null)
+            } as unknown as Response);
+
+            await expect(
+                OrderService.registrarPago(10, {
+                    idCliente: 1,
+                    monto: 10,
+                    referencia: '',
+                    idUsuario: 1
+                })
+            ).rejects.toThrow('Error al registrar pago');
+        });
+
+        it('debe lanzar el mensaje del servidor si falla el registro de pago con detalle', async () => {
+            mockApiClient.mockResolvedValueOnce({
+                ok: false,
+                json: jest.fn().mockResolvedValueOnce({ message: 'El monto excede el saldo' })
+            } as unknown as Response);
+
+            await expect(
+                OrderService.registrarPago(10, {
+                    idCliente: 1,
+                    monto: 9999,
+                    referencia: 'REF',
+                    idUsuario: 1
+                })
+            ).rejects.toThrow('El monto excede el saldo');
         });
 
         it('debe avanzar el estatus de una orden', async () => {
@@ -363,6 +467,7 @@ describe('OrderService', () => {
             ).rejects.toThrow('Error al subir el archivo');
         });
     });
+
     describe('Manejo de errores en consultas', () => {
         it('debe manejar el error al avanzar el estatus', async () => {
             mockApiClient.mockResolvedValueOnce({ ok: false } as Response);
@@ -446,5 +551,13 @@ describe('OrderService', () => {
                 OrderService.getOrdenes()
             ).rejects.toThrow('Error al obtener lista de órdenes');
         });
+
+        it('debe manejar el error al consultar clientes con saldo deudor', async () => {
+            mockApiClient.mockResolvedValueOnce({ ok: false } as Response);
+
+            await expect(
+                OrderService.getClientesConSaldoDeudor()
+            ).rejects.toThrow('Error al obtener clientes con saldo deudor');
+        });
     });
-},)
+});

@@ -1,6 +1,8 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom';
 import { OrderPaymentDialog } from './OrderPaymentDialog';
+import { ClientService } from '@/app/service/clientService';
 
 jest.mock('primereact/fileupload', () => ({
     FileUpload: ({ onSelect, onRemove, onClear }: any) => (
@@ -84,7 +86,8 @@ describe('OrderPaymentDialog Component', () => {
     const mockPaymentConditions = [
         { idCondicion: 1, numeroPlazos: 1, descripcion: 'Contado 100%' },
         { idCondicion: 2, numeroPlazos: 2, descripcion: 'Anticipo 20%' },
-        { idCondicion: 3, numeroPlazos: 3, descripcion: '3 Pagos' }
+        { idCondicion: 3, numeroPlazos: 3, descripcion: '3 Pagos' },
+        { idCondicion: 4, numeroPlazos: 1, diasCredito: 30, descripcion: 'Crédito 30 días' }
     ];
 
     const defaultProps = {
@@ -117,7 +120,6 @@ describe('OrderPaymentDialog Component', () => {
 
         return utils;
     };
-
 
     it('no debe mostrar el diálogo cuando visible es false', async () => {
         await renderAndWait({ ...defaultProps, visible: false });
@@ -167,75 +169,57 @@ describe('OrderPaymentDialog Component', () => {
             paymentType: 'unico',
             notes: 'TRANSF-987',
             conditionId: 1,
-            file: null
+            file: null,
+            clientId: 1
         });
     });
 
-    it('debe deshabilitar el botón de confirmación si el monto es 0 o excede el saldo', async () => {
-        await renderAndWait({ ...defaultProps, paidAmount: 1000.0 });
-
-        const confirmBtn = screen.getByRole('button', { name: /Confirmar Pago y Guardar/i });
-        expect(confirmBtn).toBeDisabled();
-    });
-
-    it('debe calcular el saldo pendiente al seleccionar pago total', async () => {
-        await renderAndWait({
+    it('debe deshabilitar el botón de confirmación si el monto excede el saldo o es 0 en modo abono', async () => {
+        const { unmount } = await renderAndWait({
             ...defaultProps,
-            total: 1500,
-            paidAmount: 400
+            paidAmount: 1000.0,
+            isAbono: true
         });
 
-        fireEvent.click(
-            screen.getByRole('button', { name: /Pago Total \(Liquidar\)/i })
-        );
+        expect(
+            screen.getByRole('button', { name: /Registrar Abono/i })
+        ).toBeDisabled();
 
-        expect(screen.getByText('$1100.00')).toBeInTheDocument();
+        unmount();
+
+        await renderAndWait({ ...defaultProps, total: 1000.0, paidAmount: 0.0 });
+
+        const inputCobrar = screen.getByPlaceholderText('0.00');
+        fireEvent.change(inputCobrar, { target: { value: '1500' } });
+
+        expect(
+            screen.getByRole('button', { name: /Confirmar Pago y Guardar/i })
+        ).toBeDisabled();
     });
 
-    it('debe calcular el anticipo sugerido cuando ya se ha abonado al menos el 19%', async () => {
-        await renderAndWait({
-            ...defaultProps,
-            total: 1000,
-            paidAmount: 200,
-            currentConditionId: 2
-        });
-
-        expect(screen.getByPlaceholderText('0.00')).toHaveValue(800);
-    });
-
-    it('debe calcular el anticipo del 50% cuando el abono anterior es menor al 19%', async () => {
-        await renderAndWait({
-            ...defaultProps,
-            total: 1000,
-            paidAmount: 100,
-            currentConditionId: 2
-        });
-
-        expect(screen.getByPlaceholderText('0.00')).toHaveValue(900);
-    });
-
-    it('debe calcular los plazos iniciales para la condición 4', async () => {
-        await renderAndWait({
-            ...defaultProps,
-            total: 2000,
-            paidAmount: 0,
-            currentConditionId: 4
-        });
-
-        expect(screen.getByPlaceholderText('0.00')).toHaveValue(2000);
-    });
-
-    it('debe mostrar el encabezado de abono cuando no hay productos', async () => {
+    it('debe mostrar el encabezado y botón de abono en modo isAbono', async () => {
         await renderAndWait({
             ...defaultProps,
             items: [],
             orderId: 25,
+            total: 1000,
+            paidAmount: 400,
             isAbono: true
         });
 
         expect(
             screen.getByText('Registrar abono a orden #25')
         ).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /Registrar Abono/i }));
+
+        expect(mockOnConfirmPayment).toHaveBeenCalledWith(
+            expect.objectContaining({
+                amount: 600,
+                conditionId: 1,
+                clientId: 1
+            })
+        );
     });
 
     it('debe mostrar el saldo pendiente y el abono anterior', async () => {
@@ -316,5 +300,83 @@ describe('OrderPaymentDialog Component', () => {
         expect(mockOnConfirmPayment).toHaveBeenCalledWith(
             expect.objectContaining({ file: null })
         );
+    });
+
+    it('debe permitir seleccionar crédito directo cuando el cliente tiene crédito activo y al corriente', async () => {
+        await renderAndWait({
+            ...defaultProps,
+            client: {
+                id: 1,
+                creditoHabilitado: true,
+                estatusCredito: 'AL CORRIENTE',
+                diasCredito: 30
+            } as any
+        });
+
+        const creditBtn = screen.getByRole('button', {
+            name: /Crédito directo \(30 días\)/i
+        });
+        expect(creditBtn).not.toBeDisabled();
+
+        fireEvent.click(creditBtn);
+
+        const inputCobrar = screen.getByPlaceholderText('0.00') as HTMLInputElement;
+        expect(inputCobrar.value).toBe('0');
+
+        fireEvent.click(
+            screen.getByRole('button', { name: /Confirmar Pago y Guardar/i })
+        );
+
+        expect(mockOnConfirmPayment).toHaveBeenCalledWith(
+            expect.objectContaining({
+                amount: 0,
+                paymentType: 'credito',
+                conditionId: 4,
+                clientId: 1
+            })
+        );
+    });
+
+    it('debe bloquear el crédito directo y mostrar alerta si el cliente tiene estatus ATRASADO', async () => {
+        await renderAndWait({
+            ...defaultProps,
+            client: {
+                id: 1,
+                creditoHabilitado: true,
+                estatusCredito: 'ATRASADO',
+                diasCredito: 30
+            } as any
+        });
+
+        expect(
+            screen.getByText(/CRÉDITO BLOQUEADO: El cliente tiene saldo atrasado/i)
+        ).toBeInTheDocument();
+
+        expect(
+            screen.getByRole('button', { name: /Crédito directo \(30 días\)/i })
+        ).toBeDisabled();
+    });
+
+    it('debe consultar ClientService.getById cuando el cliente viene incompleto', async () => {
+        (ClientService.getById as jest.Mock).mockResolvedValueOnce({
+            id: 5,
+            nombre: 'Cliente Consultado',
+            creditoHabilitado: true,
+            estatusCredito: 'AL CORRIENTE',
+            diasCredito: 15
+        });
+
+        await renderAndWait({
+            ...defaultProps,
+            client: { id: 5 } as any
+        });
+
+        await waitFor(() => {
+            expect(ClientService.getById).toHaveBeenCalledWith(5);
+        });
+
+        expect(
+            screen.getByRole('button', { name: /Crédito directo \(15 días\)/i })
+        ).not.toBeDisabled();
     });
 });

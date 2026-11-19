@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import Dashboard from './page';
@@ -367,8 +366,6 @@ describe('Dashboard - Pruebas de integración', () => {
         await waitFor(() => {
             expect(mockReplace).toHaveBeenCalledWith('/auth/login');
         });
-
-        expect(mockReplace).toHaveBeenCalledWith('/auth/login');
     });
 
     it('debe permitir el acceso cuando existe un token en localStorage', async () => {
@@ -598,7 +595,7 @@ describe('Dashboard - Pruebas de integración', () => {
         fireEvent.click(within(orderRow).getByTitle('Entregar'));
 
         expect(screen.getByRole('dialog')).toBeInTheDocument();
-        expect(screen.getByText('Confirmar Entrega')).toBeInTheDocument();
+        expect(screen.getByText('Confirmar entrega')).toBeInTheDocument();
         expect(screen.getByText(/¿Confirmas que el cliente ha recibido/)).toBeInTheDocument();
     });
 
@@ -610,7 +607,51 @@ describe('Dashboard - Pruebas de integración', () => {
         const orderRow = screen.getAllByTestId('order-row')[1];
         fireEvent.click(within(orderRow).getByTitle('Entregar'));
 
-        fireEvent.click(screen.getByText('Entregar Orden'));
+        fireEvent.click(screen.getByText('Entregar orden'));
+
+        await waitFor(() => {
+            expect(OrderService.avanzarEstatus).toHaveBeenCalledWith(
+                102,
+                {
+                    idUsuario: 7,
+                    idEstatusDestino: 12,
+                    clienteAprobo: true
+                }
+            );
+        });
+
+        expect(mockShow).toHaveBeenCalledWith(
+            expect.objectContaining({
+                severity: 'success',
+                summary: 'Entregada'
+            })
+        );
+    });
+
+    it('debe entregar una orden con adeudo mostrando la advertencia correspondiente', async () => {
+        (OrderService.getOrdenesActivas as jest.Mock).mockResolvedValue({
+            content: [
+                {
+                    ...mockOrders[1],
+                    montoTotal: 2000,
+                    montoPagado: 1500
+                }
+            ],
+            page: { totalElements: 1 }
+        });
+
+        render(<Dashboard />);
+
+        await screen.findByText('Orden #102');
+
+        const orderRow = screen.getAllByTestId('order-row')[0];
+        fireEvent.click(within(orderRow).getByTitle('Entregar'));
+
+        expect(screen.getByText('Confirmar entrega con adeudo')).toBeInTheDocument();
+        expect(screen.getByText('Orden con saldo pendiente')).toBeInTheDocument();
+        expect(screen.getByText('Ir a caja')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByText('Entregar con adeudo'));
 
         await waitFor(() => {
             expect(OrderService.avanzarEstatus).toHaveBeenCalledWith(
@@ -643,7 +684,7 @@ describe('Dashboard - Pruebas de integración', () => {
         const orderRow = screen.getAllByTestId('order-row')[1];
         fireEvent.click(within(orderRow).getByTitle('Entregar'));
 
-        fireEvent.click(screen.getByText('Entregar Orden'));
+        fireEvent.click(screen.getByText('Entregar orden'));
 
         await waitFor(() => {
             expect(mockShow).toHaveBeenCalledWith(

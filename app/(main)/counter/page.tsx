@@ -23,6 +23,7 @@ import { OrderPaymentDialog, PaymentData } from '../../components/OrderPaymentDi
 import { ProductQuantityDialog } from '../../components/ProductQuantityDialog';
 import { ClientFormDialog } from "@/app/components/ClientFormDialog";
 import { ClientSearchDialog } from "@/app/components/ClientSearchDialog";
+import { DebtClientsDialog } from '@/app/components/DebtClientsDialog';
 
 interface QuoteItemUI extends Producto {
     cantidad: number;
@@ -51,6 +52,7 @@ const Counter = () => {
     const [showAddNewClientDialog, setShowAddNewClientDialog] = useState(false);
     const [showAssignClientDialog, setShowAssignClientDialog] = useState(false);
     const [showQuantityDialog, setShowQuantityDialog] = useState(false);
+    const [showDebtClientsDialog, setShowDebtClientsDialog] = useState(false);
     const [showOrderSummary, setShowOrderSummary] = useState(false);
     const [activeOrderItems, setActiveOrderItems] = useState<any[]>([]);
     const [paymentConditions, setPaymentConditions] = useState<any[]>([]);
@@ -453,6 +455,17 @@ const Counter = () => {
     const handleProcessPayment = async (data: PaymentData) => {
         if (activeOrderId === null || isSubmitting) return;
 
+        const resolvedClientId = data.clientId || assignedClient?.id || (assignedClient as any)?.idCliente;
+
+        if (!resolvedClientId && data.amount > 0) {
+            toast.current?.show({
+                severity: 'error',
+                summary: 'Cliente requerido',
+                detail: 'No se pudo identificar el cliente asociado a la orden para registrar el pago.'
+            });
+            return;
+        }
+
         const esAbono =
             activeOrderPaid > 0 ||
             (activeOrderStatus !== 1 && activeOrderStatus !== 0) ||
@@ -474,8 +487,9 @@ const Counter = () => {
 
             if (data.amount > 0) {
                 await OrderService.registrarPago(activeOrderId, {
+                    idCliente: resolvedClientId!,
                     monto: data.amount,
-                    referencia: `Pago ${data.paymentType} - ${data.notes || ''}`,
+                    referencia: `Pago ${data.paymentType}${data.notes ? ` - ${data.notes}` : ''}`,
                     idUsuario: currentUserId
                 });
             }
@@ -502,7 +516,9 @@ const Counter = () => {
             toast.current?.show({
                 severity: 'success',
                 summary: 'Éxito',
-                detail: 'Orden actualizada correctamente'
+                detail: data.amount === 0
+                    ? 'Orden iniciada sin pago inicial'
+                    : 'Orden actualizada correctamente'
             });
 
             setShowOrderSummary(false);
@@ -515,7 +531,7 @@ const Counter = () => {
             toast.current?.show({
                 severity: 'error',
                 summary: 'Error',
-                detail: error.message || 'Error al procesar el pago'
+                detail: error.message || 'Error al procesar la orden'
             });
         } finally {
             setIsSubmitting(false);
@@ -575,16 +591,32 @@ const Counter = () => {
         setOrderNotes('');
         setActiveOrderItems([]);
 
+        const clientFound = clients.find(
+            (c) => Number(c.id || (c as any).idCliente) === Number(rowData.idCliente)
+        );
+        setAssignedClient(clientFound || null);
+
         try {
             const fullData = await OrderService.getOrdenById(rowData.idOrden);
             setOrderNotes(fullData.notasDiseno || '');
+
+            if (!clientFound && fullData.idCliente) {
+                const fallbackClient = clients.find(
+                    (c) => Number(c.id || (c as any).idCliente) === Number(fullData.idCliente)
+                );
+                if (fallbackClient) {
+                    setAssignedClient(fallbackClient);
+                } else {
+                    const fetchedClient = await ClientService.getById(fullData.idCliente);
+                    setAssignedClient(fetchedClient);
+                }
+            }
         } catch (error) {
             setOrderNotes('');
         }
 
         setShowOrderSummary(true);
     };
-
     const renderImporte = (d: any) => (
         <span className="text-green-700 text-lg">
             ${d.importe.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -621,6 +653,12 @@ const Counter = () => {
                     </Link>
                     <Button label="Lista de cotizaciones" icon="pi pi-list" outlined onClick={() => setShowQuotesList(true)} />
                     <Button label="Lista de ordenes" icon="pi pi-inbox" outlined onClick={() => setShowOrdersList(true)} />
+                    <Button
+                        label="Lista de adeudos"
+                        icon="pi pi-wallet"
+                        outlined
+                        onClick={() => setShowDebtClientsDialog(true)}
+                    />
                 </div>
 
                 {/* --- BUSCADOR DE PRODUCTOS --- */}
@@ -768,6 +806,16 @@ const Counter = () => {
                         setPendingProduct(null);
                     }}
                     onConfirm={handleAddProductFromModal}
+                />
+
+                {/* MODAL: CLIENTES CON SALDO DEUDOR */}
+                <DebtClientsDialog
+                    visible={showDebtClientsDialog}
+                    onHide={() => setShowDebtClientsDialog(false)}
+                    currentUserId={currentUserId}
+                    onPaymentSuccess={() => {
+                        loadOrderHistory();
+                    }}
                 />
 
             </div>
