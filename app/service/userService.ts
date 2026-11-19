@@ -7,6 +7,11 @@ export interface NuevoUsuario {
     rol: number | null;
 }
 
+export interface CambiarPasswordRequest {
+    passwordActual: string;
+    nuevaPassword: string;
+}
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 export const UserService = {
@@ -20,6 +25,31 @@ export const UserService = {
         const res = await apiClient(`${API_BASE_URL}/usuarios/disenadores`);
         if (!res.ok) throw new Error("Error al obtener lista de diseñadores");
         return await res.json();
+    },
+
+    async cambiarPassword(
+        idUsuario: number,
+        payload: CambiarPasswordRequest,
+        tokenOverride?: string
+    ): Promise<{ mensaje: string }> {
+        const headers: Record<string, string> = {};
+        if (tokenOverride) {
+            headers['Authorization'] = `Bearer ${tokenOverride}`;
+        }
+
+        const res = await apiClient(`${API_BASE_URL}/usuarios/${idUsuario}/cambiar-password`, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify(payload)
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+            throw new Error(data.message || data.error || 'No se pudo actualizar la contraseña');
+        }
+
+        return data;
     }
 };
 
@@ -39,7 +69,7 @@ export async function registrarUsuario(data: NuevoUsuario) {
             throw new Error(errorData || "Error al registrar usuario");
         }
         return await response.json();
-        
+
     } catch (error) {
         console.error("Error en servicio registrarUsuario:", error);
         throw error;

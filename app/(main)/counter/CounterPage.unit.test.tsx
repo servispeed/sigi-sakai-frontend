@@ -131,7 +131,6 @@ jest.mock('primereact/dropdown', () => ({
     ),
 }));
 
-
 jest.mock('../../components/QuoteListDialog', () => ({
     QuoteListDialog: ({
         visible,
@@ -145,6 +144,7 @@ jest.mock('../../components/QuoteListDialog', () => ({
                     onClick={() =>
                         onRetake({
                             idOrden: 10,
+                            idCliente: 1,
                             montoTotal: 500,
                             montoPagado: 0,
                             idEstatusActual: 1,
@@ -162,7 +162,6 @@ jest.mock('../../components/QuoteListDialog', () => ({
                 >
                     Página siguiente cotizaciones
                 </button>
-
 
                 <button onClick={onHide}>
                     Cerrar Cotizaciones
@@ -186,6 +185,7 @@ jest.mock('../../components/ActiveOrdersDialog', () => ({
                         onClick={() =>
                             onQuickPay({
                                 idOrden: 10 + conditionId,
+                                idCliente: 1,
                                 montoTotal: 600,
                                 montoPagado: conditionId === 2 ? 150 : 100,
                                 idEstatusActual: 2,
@@ -201,6 +201,7 @@ jest.mock('../../components/ActiveOrdersDialog', () => ({
                     onClick={() =>
                         onQuickPay({
                             idOrden: 10,
+                            idCliente: 1,
                             montoTotal: 500,
                             montoPagado: 0,
                             idEstatusActual: 1,
@@ -288,24 +289,34 @@ jest.mock('../../components/OrderPaymentDialog', () => ({
                 <button
                     onClick={() =>
                         onConfirmPayment({
+                            clientId: 1,
                             conditionId: 1,
                             amount: 100,
+                            paymentType: 'parcial',
                             notes: 'test',
-                        })}>Procesar Pago
+                        })
+                    }
+                >
+                    Procesar Pago
                 </button>
 
                 <button
                     onClick={() =>
                         onConfirmPayment({
+                            clientId: 1,
                             conditionId: 1,
                             amount: 0,
                             notes: 'Sin pago',
-                        })}>Procesar sin importe
+                        })
+                    }
+                >
+                    Procesar sin importe
                 </button>
 
                 <button
                     onClick={() =>
                         onConfirmPayment({
+                            clientId: 1,
                             conditionId: 1,
                             amount: 0,
                             notes: 'Prueba de archivo',
@@ -387,6 +398,15 @@ jest.mock('@/app/components/ClientSearchDialog', () => ({
         ) : null,
 }));
 
+jest.mock('@/app/components/DebtClientsDialog', () => ({
+    DebtClientsDialog: ({ visible, onHide }: any) =>
+        visible ? (
+            <div data-testid="debt-clients-dialog">
+                <button onClick={onHide}>Cerrar Adeudos</button>
+            </div>
+        ) : null,
+}));
+
 describe('Counter Component', () => {
     const mockClients = [
         {
@@ -439,25 +459,11 @@ describe('Counter Component', () => {
             })
         );
 
-        mockClientService.getAll.mockResolvedValue(
-            mockClients as any
-        );
-
-        mockUserService.getDesigners.mockResolvedValue(
-            mockDesigners as any
-        );
-
-        mockCatalogService.getCondicionesPago.mockResolvedValue(
-            mockConditions as any
-        );
-
-        mockOrderService.getEstatusOperaciones.mockResolvedValue(
-            mockEstatus as any
-        );
-
-        mockCatalogService.getAllProductos.mockResolvedValue(
-            mockProducts as any
-        );
+        mockClientService.getAll.mockResolvedValue(mockClients as any);
+        mockUserService.getDesigners.mockResolvedValue(mockDesigners as any);
+        mockCatalogService.getCondicionesPago.mockResolvedValue(mockConditions as any);
+        mockOrderService.getEstatusOperaciones.mockResolvedValue(mockEstatus as any);
+        mockCatalogService.getAllProductos.mockResolvedValue(mockProducts as any);
 
         mockOrderService.getOrdenes.mockResolvedValue({
             content: [],
@@ -475,7 +481,6 @@ describe('Counter Component', () => {
         } as any);
     });
 
-
     const renderComponent = async () => {
         let result!: ReturnType<typeof render>;
 
@@ -488,17 +493,13 @@ describe('Counter Component', () => {
 
     const prepararCotizacion = async () => {
         await renderComponent();
-        fireEvent.click(
-            screen.getByTestId('select-product-btn')
-        );
+        fireEvent.click(screen.getByTestId('select-product-btn'));
         fireEvent.click(
             await screen.findByRole('button', {
                 name: /confirmar cantidad/i,
             })
         );
-        expect(
-            screen.getByText('Lona Impresa')
-        ).toBeInTheDocument();
+        expect(screen.getByText('Lona Impresa')).toBeInTheDocument();
 
         fireEvent.click(
             screen.getByRole('button', {
@@ -506,9 +507,7 @@ describe('Counter Component', () => {
             })
         );
 
-        expect(
-            screen.getByTestId('quote-summary-dialog')
-        ).toBeInTheDocument();
+        expect(screen.getByTestId('quote-summary-dialog')).toBeInTheDocument();
 
         fireEvent.click(
             screen.getByRole('button', {
@@ -522,10 +521,9 @@ describe('Counter Component', () => {
             })
         );
 
-        fireEvent.change(
-            screen.getByTestId('quote-designer-select'),
-            { target: { value: '10' } }
-        );
+        fireEvent.change(screen.getByTestId('quote-designer-select'), {
+            target: { value: '10' },
+        });
     };
 
     it('debe tolerar errores al cargar los catálogos iniciales', async () => {
@@ -533,9 +531,7 @@ describe('Counter Component', () => {
             .spyOn(console, 'error')
             .mockImplementation(() => { });
 
-        mockClientService.getAll.mockRejectedValueOnce(
-            new Error('Error clientes')
-        );
+        mockClientService.getAll.mockRejectedValueOnce(new Error('Error clientes'));
         mockCatalogService.getCondicionesPago.mockRejectedValueOnce(
             new Error('Error condiciones')
         );
@@ -570,37 +566,17 @@ describe('Counter Component', () => {
         await waitFor(() => {
             expect(mockClientService.getAll).toHaveBeenCalled();
             expect(mockUserService.getDesigners).toHaveBeenCalled();
-            expect(
-                mockCatalogService.getCondicionesPago
-            ).toHaveBeenCalled();
-            expect(
-                mockOrderService.getEstatusOperaciones
-            ).toHaveBeenCalled();
-            expect(
-                mockCatalogService.getAllProductos
-            ).toHaveBeenCalled();
+            expect(mockCatalogService.getCondicionesPago).toHaveBeenCalled();
+            expect(mockOrderService.getEstatusOperaciones).toHaveBeenCalled();
+            expect(mockCatalogService.getAllProductos).toHaveBeenCalled();
             expect(mockOrderService.getOrdenes).toHaveBeenCalled();
         });
-
-        await act(async () => {
-            await Promise.all([
-                mockClientService.getAll(),
-                mockUserService.getDesigners(),
-                mockCatalogService.getCondicionesPago(),
-                mockOrderService.getEstatusOperaciones(),
-                mockCatalogService.getAllProductos(),
-                mockOrderService.getOrdenes(),
-            ]);
-        });
     });
-
 
     it('debe prevenir la inserción de productos duplicados en el carrito', async () => {
         await renderComponent();
 
-        fireEvent.click(
-            screen.getByTestId('select-product-btn')
-        );
+        fireEvent.click(screen.getByTestId('select-product-btn'));
 
         fireEvent.click(
             await screen.findByRole('button', {
@@ -612,10 +588,7 @@ describe('Counter Component', () => {
             screen.getByRole('button', { name: /cotizar/i })
         ).not.toBeDisabled();
 
-        // Intentar agregar el mismo producto nuevamente.
-        fireEvent.click(
-            screen.getByTestId('select-product-btn')
-        );
+        fireEvent.click(screen.getByTestId('select-product-btn'));
 
         expect(mockToastShow).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -640,9 +613,7 @@ describe('Counter Component', () => {
         );
 
         await waitFor(() => {
-            expect(
-                mockOrderService.crearOrden
-            ).toHaveBeenCalledTimes(1);
+            expect(mockOrderService.crearOrden).toHaveBeenCalledTimes(1);
         });
 
         expect(mockOrderService.crearOrden).toHaveBeenCalledWith(
@@ -682,9 +653,7 @@ describe('Counter Component', () => {
 
         await prepararCotizacion();
 
-        expect(
-            screen.getByText('Lona Impresa')
-        ).toBeInTheDocument();
+        expect(screen.getByText('Lona Impresa')).toBeInTheDocument();
 
         fireEvent.click(
             screen.getByRole('button', {
@@ -693,14 +662,10 @@ describe('Counter Component', () => {
         );
 
         await waitFor(() => {
-            expect(
-                mockOrderService.crearOrden
-            ).toHaveBeenCalledTimes(1);
+            expect(mockOrderService.crearOrden).toHaveBeenCalledTimes(1);
         });
         await waitFor(() => {
-            expect(
-                screen.queryByText('Lona Impresa')
-            ).not.toBeInTheDocument();
+            expect(screen.queryByText('Lona Impresa')).not.toBeInTheDocument();
         });
 
         expect(
@@ -716,24 +681,14 @@ describe('Counter Component', () => {
     });
 
     it('debe procesar correctamente un pago completo y avanzar estatus', async () => {
-        mockOrderService.updateCondicionPago.mockResolvedValue(
-            {} as any
-        );
-
-        mockOrderService.updateNotasDiseno.mockResolvedValue(
-            {} as any
-        );
-
-        mockOrderService.registrarPago.mockResolvedValue(
-            {} as any
-        );
-
-        mockOrderService.avanzarEstatus.mockResolvedValue(
-            {} as any
-        );
+        mockOrderService.updateCondicionPago.mockResolvedValue({} as any);
+        mockOrderService.updateNotasDiseno.mockResolvedValue({} as any);
+        mockOrderService.registrarPago.mockResolvedValue({} as any);
+        mockOrderService.avanzarEstatus.mockResolvedValue({} as any);
 
         mockOrderService.getOrdenById.mockResolvedValue({
             idOrden: 10,
+            idCliente: 1,
             montoTotal: 500,
             montoPagado: 0,
             notasDiseno: 'Notas de prueba',
@@ -767,23 +722,18 @@ describe('Counter Component', () => {
         );
 
         await waitFor(() => {
-            expect(
-                mockOrderService.updateCondicionPago
-            ).toHaveBeenCalledWith(10, 1);
+            expect(mockOrderService.updateCondicionPago).toHaveBeenCalledWith(10, 1);
 
-            expect(
-                mockOrderService.registrarPago
-            ).toHaveBeenCalledWith(
+            expect(mockOrderService.registrarPago).toHaveBeenCalledWith(
                 10,
                 expect.objectContaining({
+                    idCliente: 1,
                     monto: 100,
                     idUsuario: 1,
                 })
             );
 
-            expect(
-                mockOrderService.avanzarEstatus
-            ).toHaveBeenCalledWith(10, {
+            expect(mockOrderService.avanzarEstatus).toHaveBeenCalledWith(10, {
                 idUsuario: 1,
             });
         });
@@ -879,12 +829,9 @@ describe('Counter Component', () => {
         );
 
         await waitFor(() => {
-            expect(mockCatalogService.getProducto).toHaveBeenCalledWith(
-                'tarjetas'
-            );
+            expect(mockCatalogService.getProducto).toHaveBeenCalledWith('tarjetas');
         });
     });
-
 
     it('no debe consultar productos cuando la búsqueda está vacía o contiene espacios', async () => {
         await renderComponent();
@@ -917,7 +864,6 @@ describe('Counter Component', () => {
 
         expect(screen.getByText('Carrito vacío.')).toBeInTheDocument();
     });
-
 
     it('debe manejar un historial vacío', async () => {
         mockOrderService.getOrdenes.mockResolvedValueOnce({
@@ -977,9 +923,9 @@ describe('Counter Component', () => {
         });
     });
 
-
     it('debe procesar órdenes con distintas condiciones de pago rápido', async () => {
         mockOrderService.getOrdenById.mockResolvedValue({
+            idCliente: 1,
             notasDiseno: 'Notas de prueba',
             detalles: [],
         } as any);
@@ -1013,53 +959,6 @@ describe('Counter Component', () => {
         }
     });
 
-    it('no debe registrar un pago financiero si el importe es cero', async () => {
-        mockOrderService.getOrdenById.mockResolvedValue({
-            notasDiseno: '',
-            detalles: [],
-        } as any);
-
-        mockOrderService.updateCondicionPago.mockResolvedValue({} as any);
-        mockOrderService.updateNotasDiseno.mockResolvedValue({} as any);
-
-        await renderComponent();
-
-        fireEvent.click(
-            await screen.findByRole('button', {
-                name: /lista de ordenes/i,
-            })
-        );
-
-        fireEvent.click(
-            await screen.findByRole('button', {
-                name: /seleccionar orden mock/i,
-            })
-        );
-
-        expect(
-            await screen.findByTestId('order-payment-dialog')
-        ).toBeInTheDocument();
-
-        fireEvent.click(
-            screen.getByRole('button', {
-                name: /procesar sin importe/i,
-            })
-        );
-
-        await waitFor(() => {
-            expect(mockOrderService.updateCondicionPago).toHaveBeenCalled();
-            expect(mockOrderService.updateNotasDiseno).toHaveBeenCalled();
-            expect(mockOrderService.registrarPago).not.toHaveBeenCalled();
-        });
-
-        expect(mockToastShow).toHaveBeenCalledWith(
-            expect.objectContaining({
-                severity: 'success',
-                detail: 'Orden actualizada correctamente',
-            })
-        );
-    });
-
     it('debe mostrar un error cuando no puede recuperar una orden', async () => {
         (OrderService.getOrdenById as jest.Mock).mockRejectedValue(
             new Error('Error al recuperar la orden')
@@ -1076,7 +975,6 @@ describe('Counter Component', () => {
             await screen.findByTestId('quote-list-dialog')
         ).toBeInTheDocument();
 
-        // Ejecuta handleOrder mediante onRetake.
         fireEvent.click(
             screen.getByRole('button', {
                 name: /seleccionar cotización mock/i,
@@ -1169,6 +1067,7 @@ describe('Counter Component', () => {
             .mockImplementation(() => { });
 
         mockOrderService.getOrdenById.mockResolvedValue({
+            idCliente: 1,
             notasDiseno: '',
             detalles: [],
         } as any);
@@ -1205,7 +1104,7 @@ describe('Counter Component', () => {
             expect(mockToastShow).toHaveBeenCalledWith(
                 expect.objectContaining({
                     severity: 'success',
-                    detail: 'Orden actualizada correctamente',
+                    detail: 'Orden iniciada sin pago inicial',
                 })
             );
         });
@@ -1262,6 +1161,13 @@ describe('Counter Component', () => {
     });
 
     it('debe mostrar un error si falla la actualización de la condición de pago', async () => {
+        mockOrderService.getOrdenById.mockResolvedValueOnce({
+            idOrden: 10,
+            idCliente: 1,
+            notasDiseno: '',
+            detalles: [],
+        } as any);
+
         (OrderService.updateCondicionPago as jest.Mock).mockRejectedValueOnce(
             new Error('Error al actualizar condición')
         );
@@ -1286,12 +1192,29 @@ describe('Counter Component', () => {
 
         await waitFor(() => {
             expect(OrderService.updateCondicionPago).toHaveBeenCalledWith(10, 1);
+            expect(mockToastShow).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    severity: 'error',
+                    summary: 'Error',
+                    detail: 'Error al actualizar condición',
+                })
+            );
         });
 
         expect(OrderService.registrarPago).not.toHaveBeenCalled();
     });
 
     it('debe mostrar un error cuando falla el registro financiero del pago', async () => {
+        mockOrderService.getOrdenById.mockResolvedValueOnce({
+            idOrden: 10,
+            idCliente: 1,
+            notasDiseno: '',
+            detalles: [],
+        } as any);
+
+        mockOrderService.updateCondicionPago.mockResolvedValueOnce({} as any);
+        mockOrderService.updateNotasDiseno.mockResolvedValueOnce({} as any);
+
         (OrderService.registrarPago as jest.Mock).mockRejectedValueOnce(
             new Error('Error financiero')
         );
@@ -1318,8 +1241,16 @@ describe('Counter Component', () => {
             expect(OrderService.registrarPago).toHaveBeenCalledWith(
                 10,
                 expect.objectContaining({
+                    idCliente: 1,
                     monto: 100,
                     idUsuario: 1,
+                })
+            );
+            expect(mockToastShow).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    severity: 'error',
+                    summary: 'Error',
+                    detail: 'Error financiero',
                 })
             );
         });
@@ -1358,6 +1289,7 @@ describe('Counter Component', () => {
 
     it('debe recuperar una orden aunque sus productos no estén en el catálogo', async () => {
         mockOrderService.getOrdenById.mockResolvedValue({
+            idCliente: 1,
             notasDiseno: '',
             detalles: [
                 {
@@ -1385,7 +1317,4 @@ describe('Counter Component', () => {
             await screen.findByTestId('order-payment-dialog')
         ).toBeInTheDocument();
     });
-
-
-
 });

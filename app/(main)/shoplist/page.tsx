@@ -1,7 +1,7 @@
 'use client';
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { DataTable } from 'primereact/datatable';
+import { DataTable, DataTablePageEvent } from 'primereact/datatable';
 import { Column } from 'primereact/column';
 import { Toast } from 'primereact/toast';
 import { Button } from 'primereact/button';
@@ -13,7 +13,7 @@ import { comprasService } from '@/app/service/shopService';
 import { CatalogService } from '@/app/service/catalogService';
 
 const fetchProductMap = async () => {
-    const productMap = new Map();
+    const productMap = new Map<number, string>();
     try {
         const products = await CatalogService.getProductos();
         products.forEach((p: any) => {
@@ -26,7 +26,7 @@ const fetchProductMap = async () => {
     return productMap;
 };
 
-const buildResumenInsumos = (detalles: any[], productMap: Map<any, any>) => {
+const buildResumenInsumos = (detalles: any[], productMap: Map<number, string>) => {
     if (!detalles || detalles.length === 0) return 'Sin insumos especificados';
 
     return detalles.map((d: any) => {
@@ -36,7 +36,7 @@ const buildResumenInsumos = (detalles: any[], productMap: Map<any, any>) => {
     }).join(', ');
 };
 
-const enrichSolicitudesData = (pendientesData: any[], productMap: Map<any, any>) => {
+const enrichSolicitudesData = (pendientesData: any[], productMap: Map<number, string>) => {
     return pendientesData.map((s: any) => ({
         ...s,
         resumenInsumos: buildResumenInsumos(s.detalles, productMap),
@@ -72,26 +72,34 @@ const renderEstatus = (rowData: any) => {
 const ListSolicitudesPendientesPage = () => {
     const router = useRouter();
     const toast = useRef<Toast>(null);
-
+    const productMapRef = useRef<Map<number, string> | null>(null);
     const [solicitudes, setSolicitudes] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
+
+    const [first, setFirst] = useState(0);
+    const [rows, setRows] = useState(10);
+    const [totalRecords, setTotalRecords] = useState(0);
+
     const [globalFilterValue, setGlobalFilterValue] = useState('');
     const [filters, setFilters] = useState({
         global: { value: null, matchMode: FilterMatchMode.CONTAINS }
     });
 
-    useEffect(() => {
-        loadData();
-    }, []);
-
-    const loadData = async () => {
+    const loadData = useCallback(async (pageIndex: number = 0, pageSize: number = 10) => {
         setLoading(true);
         try {
-            const pendientesData = await comprasService.getPendientes();
-            const productMap = await fetchProductMap();
-            const enrichedData = enrichSolicitudesData(pendientesData, productMap);
+            if (!productMapRef.current) {
+                productMapRef.current = await fetchProductMap();
+            }
+
+            const response = await comprasService.getPendientes(pageIndex, pageSize);
+            const content = response.content || [];
+            const total = response.page?.totalElements ?? response.totalElements ?? content.length;
+
+            const enrichedData = enrichSolicitudesData(content, productMapRef.current);
 
             setSolicitudes(enrichedData);
+            setTotalRecords(total);
         } catch (err) {
             toast.current?.show({
                 severity: 'error',
@@ -101,6 +109,22 @@ const ListSolicitudesPendientesPage = () => {
         } finally {
             setLoading(false);
         }
+    }, []);
+
+    useEffect(() => {
+        loadData(0, rows);
+    }, [loadData, rows]);
+
+    const onPage = (event: DataTablePageEvent) => {
+        setFirst(event.first);
+        setRows(event.rows);
+        const pageIndex = event.page ?? Math.floor(event.first / event.rows);
+        loadData(pageIndex, event.rows);
+    };
+
+    const handleRefresh = () => {
+        const currentPage = Math.floor(first / rows);
+        loadData(currentPage, rows);
     };
 
     const onGlobalFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -123,7 +147,7 @@ const ListSolicitudesPendientesPage = () => {
                 <InputText
                     value={globalFilterValue}
                     onChange={onGlobalFilterChange}
-                    placeholder="Buscar descripción o insumo..."
+                    placeholder="Buscar en esta página..."
                     className="w-full md:w-auto"
                 />
             </span>
@@ -131,8 +155,8 @@ const ListSolicitudesPendientesPage = () => {
                 icon="pi pi-refresh"
                 rounded
                 text
-                onClick={loadData}
-                tooltip="Recargar"
+                onClick={handleRefresh}
+                tooltip="Recargar página actual"
             />
         </div>
     );
@@ -165,8 +189,12 @@ const ListSolicitudesPendientesPage = () => {
 
             <DataTable
                 value={solicitudes}
+                lazy
                 paginator
-                rows={10}
+                first={first}
+                rows={rows}
+                totalRecords={totalRecords}
+                onPage={onPage}
                 rowsPerPageOptions={[5, 10, 25, 50]}
                 header={header}
                 filters={filters}
@@ -176,11 +204,9 @@ const ListSolicitudesPendientesPage = () => {
                 stripedRows
                 loading={loading}
                 dataKey="idSolicitud"
-                sortField="fechaCreacion"
-                sortOrder={-1}
             >
-                <Column field="ordenTexto" header="Orden" body={renderOrden} sortable align="center" style={{ width: '6rem' }} />
-                <Column field="fechaFormateada" header="Fecha de solicitud" sortable style={{ width: '12rem' }} />
+                <Column field="ordenTexto" header="Orden" body={renderOrden} align="center" style={{ width: '6rem' }} />
+                <Column field="fechaFormateada" header="Fecha de solicitud" style={{ width: '12rem' }} />
                 <Column field="descripcionSolicitud" header="Notas" body={renderNotas} style={{ minWidth: '14rem' }} />
                 <Column field="resumenInsumos" header="Insumos requeridos" style={{ minWidth: '18rem' }} />
                 <Column field="idEstatus" header="Estado" body={renderEstatus} align="center" style={{ width: '8rem' }} />

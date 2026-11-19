@@ -47,9 +47,12 @@ const UploadReceiptPage = () => {
     const [dialogVisible, setDialogVisible] = useState<boolean>(false);
     const [dialogMode, setDialogMode] = useState<PurchaseDialogMode>('SUCCESS');
 
+
     useEffect(() => {
+        let active = true;
+
         const fetchData = async () => {
-            if (!orderIdParam) {
+            if (!orderIdParam || !/^\d+$/.test(orderIdParam)) {
                 setLoading(false);
                 return;
             }
@@ -57,51 +60,103 @@ const UploadReceiptPage = () => {
             try {
                 setLoading(true);
 
-                const [pendientes, listaProductos] = await Promise.all([
-                    comprasService.getPendientes(),
-                    CatalogService.getProductos().catch((err) => {
-                        console.error('Error al cargar productos:', err);
-                        return [] as Producto[];
-                    })
+                const [respuestaProductos, respuestaInicial] = await Promise.all([
+                    CatalogService.getProductos(),
+                    comprasService.getPendientes(0, 100)
                 ]);
 
+                if (!active) return;
+
+                const listaProductos = Array.isArray(respuestaProductos)
+                    ? respuestaProductos
+                    : [];
+
                 const map = new Map<string, Producto>();
-                listaProductos.forEach((prod: any) => {
-                    const key = String(prod.idProducto ?? prod.id ?? '');
-                    if (key) {
-                        map.set(key, prod);
+
+                listaProductos.forEach((prod: Producto) => {
+                    const id = prod.idProducto;
+
+                    if (id !== null && id !== undefined) {
+                        map.set(String(id), prod);
                     }
                 });
+
                 setProductosMap(map);
 
-                const encontrada = pendientes.find(
-                    (s) => String(s.idOrden) === String(orderIdParam)
-                );
+                let pendientes = respuestaInicial.content ?? [];
 
-                if (encontrada) {
-                    setSolicitud(encontrada);
+                // Buscar en otras páginas si la solicitud no está en la primera
+                if (!pendientes.some(
+                    s => String(s.idOrden) === String(orderIdParam)
+                )) {
+                    const totalPages = respuestaInicial.totalPages ?? 1;
+
+                    for (let page = 1; page < totalPages; page++) {
+                        const response = await comprasService.getPendientes(page, 100);
+
+                        if (!active) return;
+
+                        const encontrada = response.content?.find(
+                            s => String(s.idOrden) === String(orderIdParam)
+                        );
+
+                        if (encontrada) {
+                            setSolicitud(encontrada);
+                            break;
+                        }
+                    }
+
+                    if (!active) return;
+
+                    const encontrada = pendientes.some(
+                        s => String(s.idOrden) === String(orderIdParam)
+                    );
+
+                    if (encontrada) {
+                        setSolicitud(
+                            pendientes.find(
+                                s => String(s.idOrden) === String(orderIdParam)
+                            )!
+                        );
+                    } else {
+                        toast.current?.show({
+                            severity: 'warn',
+                            summary: 'Solicitud no encontrada',
+                            detail: `No se encontró una solicitud activa para la orden #${orderIdParam}`,
+                            life: 4000
+                        });
+                    }
                 } else {
+                    const encontrada = pendientes.find(
+                        s => String(s.idOrden) === String(orderIdParam)
+                    );
+
+                    setSolicitud(encontrada ?? null);
+                }
+
+            } catch (error) {
+                console.error('Error al cargar la información:', error);
+
+                if (active) {
                     toast.current?.show({
-                        severity: 'warn',
-                        summary: 'Solicitud no encontrada',
-                        detail: `No se encontró una solicitud activa para la orden #${orderIdParam}`,
+                        severity: 'error',
+                        summary: 'Error de Servidor',
+                        detail: 'No se pudo cargar la información de la solicitud de insumos.',
                         life: 4000
                     });
                 }
-            } catch (error) {
-                console.error('Error al cargar la información:', error);
-                toast.current?.show({
-                    severity: 'error',
-                    summary: 'Error de Servidor',
-                    detail: 'No se pudo cargar la información de la solicitud de insumos.',
-                    life: 4000
-                });
             } finally {
-                setLoading(false);
+                if (active) {
+                    setLoading(false);
+                }
             }
         };
 
         fetchData();
+
+        return () => {
+            active = false;
+        };
     }, [orderIdParam]);
 
     const openDialog = (mode: PurchaseDialogMode) => {
@@ -154,7 +209,7 @@ const UploadReceiptPage = () => {
                 <>
                     <div className="col-12 md:col-8 lg:col-6">
                         <div className="flex align-items-center gap-3 mb-4">
-                            <Link href="/" passHref legacyBehavior>
+                            <Link href="/shoplist" passHref legacyBehavior>
                                 <a className="p-button p-component p-button-text p-button-rounded p-button-icon-only">
                                     <i className="pi pi-arrow-left text-xl"></i>
                                 </a>

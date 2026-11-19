@@ -21,6 +21,7 @@ export interface PaymentData {
     notes: string;
     conditionId: number;
     file: File | null;
+    clientId: number | null;
 }
 
 interface OrderPaymentDialogProps {
@@ -75,7 +76,7 @@ const resolveClientData = async (initialClient: Client | null | undefined): Prom
     if (clientId) {
         return await ClientService.getById(clientId);
     }
-    
+
     return initialClient;
 };
 
@@ -103,6 +104,7 @@ export const OrderPaymentDialog = (props: OrderPaymentDialogProps) => {
     const [advanceAmount, setAdvanceAmount] = useState(0);
     const [paymentReference, setPaymentReference] = useState('');
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const resolvedClientId = clientData?.id || (clientData as any)?.idCliente || null;
 
     const saldoPendiente = Math.max(0, total - paidAmount);
 
@@ -188,15 +190,20 @@ export const OrderPaymentDialog = (props: OrderPaymentDialogProps) => {
     }, [paymentType, paymentConditions, clientData, currentCondition]);
 
     const handleConfirmClick = () => {
-        if (advanceAmount > (saldoPendiente + 0.1) || advanceAmount <= 0) return;
+        if (isAbono && advanceAmount <= 0) return;
+        if (!isAbono && advanceAmount < 0) return;
+        if (advanceAmount > (saldoPendiente + 0.1)) return;
         if (!isAbono && paymentType === 'credito' && !isCreditoHabilitado) return;
+
+        const resolvedClientId = clientData?.id || (clientData as any)?.idCliente || null;
 
         onConfirmPayment({
             amount: Number(advanceAmount.toFixed(2)),
             paymentType,
             notes: paymentReference.trim(),
             conditionId: isAbono && currentConditionId ? Number(currentConditionId) : calculateConditionId(),
-            file: selectedFile
+            file: selectedFile,
+            clientId: resolvedClientId
         });
     };
 
@@ -247,19 +254,19 @@ export const OrderPaymentDialog = (props: OrderPaymentDialogProps) => {
                         >
                             <Column field="descripcion" header="Producto" />
                             <Column field="cantidad" header="Cant." className="text-center" style={{ width: '10%' }} />
-                            <Column 
-                                field="costo" 
-                                header="Precio" 
-                                body={(item) => `$${Number(item.costo || 0).toFixed(2)}`} 
-                                className="text-right" 
-                                style={{ width: '20%' }} 
+                            <Column
+                                field="costo"
+                                header="Precio"
+                                body={(item) => `$${Number(item.costo || 0).toFixed(2)}`}
+                                className="text-right"
+                                style={{ width: '20%' }}
                             />
-                            <Column 
-                                field="importe" 
-                                header="Total" 
-                                body={(item) => `$${Number(item.importe || 0).toFixed(2)}`} 
-                                className="text-right font-bold" 
-                                style={{ width: '20%' }} 
+                            <Column
+                                field="importe"
+                                header="Total"
+                                body={(item) => `$${Number(item.importe || 0).toFixed(2)}`}
+                                className="text-right font-bold"
+                                style={{ width: '20%' }}
                             />
                         </DataTable>
 
@@ -433,7 +440,7 @@ export const OrderPaymentDialog = (props: OrderPaymentDialogProps) => {
                             loading={isSubmitting}
                             disabled={
                                 isSubmitting ||
-                                advanceAmount <= 0 ||
+                                (isAbono ? advanceAmount <= 0 : advanceAmount < 0) ||
                                 advanceAmount > (saldoPendiente + 0.1) ||
                                 (!isAbono && paymentType === 'credito' && !isCreditoHabilitado)
                             }

@@ -201,7 +201,10 @@ describe('ListSolicitudesPendientesPage', () => {
     beforeEach(() => {
         jest.clearAllMocks();
 
-        mockGetPendientes.mockResolvedValue(solicitudesMock);
+        mockGetPendientes.mockResolvedValue({
+            content: solicitudesMock,
+            totalElements: solicitudesMock.length
+        });
         mockGetProductos.mockResolvedValue(productosMock);
     });
 
@@ -225,7 +228,7 @@ describe('ListSolicitudesPendientesPage', () => {
         renderPage();
 
         await waitFor(() => {
-            expect(mockGetPendientes).toHaveBeenCalledTimes(1);
+            expect(mockGetPendientes).toHaveBeenCalledWith(0, 10);
             expect(mockGetProductos).toHaveBeenCalledTimes(1);
         });
     });
@@ -266,16 +269,18 @@ describe('ListSolicitudesPendientesPage', () => {
     });
 
     it('debe mostrar el resumen de insumos genéricos cuando un detalle no tiene producto asociado', async () => {
-        mockGetPendientes.mockResolvedValue([
-            {
-                ...solicitudesMock[0],
-                detalles: [
-                    {
-                        cantidad: 4
-                    }
-                ]
-            }
-        ]);
+        mockGetPendientes.mockResolvedValue({
+            content: [
+                {
+                    ...solicitudesMock[0],
+                    detalles: [
+                        {
+                            cantidad: 4
+                        }
+                    ]
+                }
+            ]
+        });
 
         renderPage();
 
@@ -285,17 +290,19 @@ describe('ListSolicitudesPendientesPage', () => {
     });
 
     it('debe mostrar el identificador del producto cuando no existe en el catálogo', async () => {
-        mockGetPendientes.mockResolvedValue([
-            {
-                ...solicitudesMock[0],
-                detalles: [
-                    {
-                        idProducto: 999,
-                        cantidad: 2
-                    }
-                ]
-            }
-        ]);
+        mockGetPendientes.mockResolvedValue({
+            content: [
+                {
+                    ...solicitudesMock[0],
+                    detalles: [
+                        {
+                            idProducto: 999,
+                            cantidad: 2
+                        }
+                    ]
+                }
+            ]
+        });
 
         renderPage();
 
@@ -351,12 +358,14 @@ describe('ListSolicitudesPendientesPage', () => {
     });
 
     it('debe mostrar un estado desconocido para solicitudes con otro estatus', async () => {
-        mockGetPendientes.mockResolvedValue([
-            {
-                ...solicitudesMock[0],
-                idEstatus: 5
-            }
-        ]);
+        mockGetPendientes.mockResolvedValue({
+            content: [
+                {
+                    ...solicitudesMock[0],
+                    idEstatus: 5
+                }
+            ]
+        });
 
         renderPage();
 
@@ -499,7 +508,10 @@ describe('ListSolicitudesPendientesPage', () => {
     });
 
     it('debe mostrar el mensaje de lista vacía cuando no existen solicitudes', async () => {
-        mockGetPendientes.mockResolvedValue([]);
+        mockGetPendientes.mockResolvedValue({
+            content: [],
+            totalElements: 0
+        });
 
         renderPage();
 
@@ -524,7 +536,7 @@ describe('ListSolicitudesPendientesPage', () => {
         });
     });
 
-    it('debe permitir recargar las solicitudes', async () => {
+    it('debe permitir recargar las solicitudes reutilizando el catálogo en caché', async () => {
         renderPage();
 
         await screen.findByText('Compra de materiales para impresión');
@@ -532,17 +544,17 @@ describe('ListSolicitudesPendientesPage', () => {
         expect(mockGetPendientes).toHaveBeenCalledTimes(1);
 
         fireEvent.click(screen.getByRole('button', {
-            name: 'Recargar'
+            name: 'Recargar página actual'
         }));
 
         await waitFor(() => {
             expect(mockGetPendientes).toHaveBeenCalledTimes(2);
-            expect(mockGetProductos).toHaveBeenCalledTimes(2);
+            expect(mockGetProductos).toHaveBeenCalledTimes(1);
         });
     });
 
     it('debe activar el estado de carga mientras se obtienen las solicitudes', async () => {
-        let resolvePendientes: (value: any) => void;
+        let resolvePendientes!: (value: any) => void;
 
         mockGetPendientes.mockImplementationOnce(
             () => new Promise(resolve => {
@@ -554,7 +566,14 @@ describe('ListSolicitudesPendientesPage', () => {
 
         expect(screen.getByTestId('table-loading')).toHaveTextContent('true');
 
-        resolvePendientes!(solicitudesMock);
+        await waitFor(() => {
+            expect(mockGetPendientes).toHaveBeenCalled();
+        });
+
+        resolvePendientes({
+            content: solicitudesMock,
+            totalElements: solicitudesMock.length
+        });
 
         await waitFor(() => {
             expect(screen.getByTestId('table-loading')).toHaveTextContent('false');

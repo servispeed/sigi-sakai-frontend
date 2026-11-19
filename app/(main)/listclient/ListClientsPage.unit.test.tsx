@@ -1,4 +1,3 @@
-
 import React, { forwardRef, useImperativeHandle } from 'react';
 import {
     render,
@@ -43,13 +42,9 @@ jest.mock('@/app/service/catalogService', () => ({
 
 jest.mock('next/link', () => ({
     __esModule: true,
-    default: ({
-        children,
-        href,
-    }: {
-        children: React.ReactNode;
-        href: string;
-    }) => <>{children}</>,
+    default: ({ children }: { children: React.ReactNode }) => (
+        <>{children}</>
+    )
 }));
 
 jest.mock('primereact/api', () => {
@@ -283,28 +278,71 @@ jest.mock('@/app/components/LastPurchaseDialog', () => ({
     }
 }));
 
+jest.mock('@/app/components/CreditApplicationDialog', () => ({
+    CreditApplicationDialog: ({
+        visible,
+        client,
+        onHide,
+        onSuccess,
+        onError
+    }: any) => {
+        if (!visible) return null;
+
+        return (
+            <div role="dialog" aria-label="Solicitud de crédito">
+                <span data-testid="credit-dialog">
+                    {client?.nombre}
+                </span>
+
+                <button type="button" onClick={onSuccess}>
+                    Habilitar crédito mock
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => onError('Error al habilitar crédito')}
+                >
+                    Simular error de crédito
+                </button>
+
+                <button type="button" onClick={onHide}>
+                    Cerrar solicitud
+                </button>
+            </div>
+        );
+    }
+}));
+
 const mockClients = [
     {
         id: 1,
-        nombre: 'Cliente de prueba',
+        nombre: 'Cliente Mostrador',
         email: 'cliente@ejemplo.com',
         telefono: '2291234567',
         rfc: 'XAXX010101000',
         razonSocial: 'Empresa de prueba',
         direccionFiscal: 'Veracruz, Veracruz',
         idUsoCfdi: 1,
-        idRegimenFiscal: 601
+        idRegimenFiscal: 601,
+        creditoHabilitado: false,
+        estatusCredito: null,
+        diasCredito: null,
+        limiteCredito: null
     },
     {
         id: 2,
-        nombre: 'Impresiones del Puerto',
-        email: 'puerto@ejemplo.com',
+        nombre: 'Empresa de Prueba',
+        email: 'empresa@ejemplo.com',
         telefono: '2297654321',
         rfc: 'ABC010101AAA',
-        razonSocial: 'Impresiones del Puerto SA',
+        razonSocial: 'Empresa de Prueba SA',
         direccionFiscal: 'Boca del Río, Veracruz',
         idUsoCfdi: 1,
-        idRegimenFiscal: 601
+        idRegimenFiscal: 601,
+        creditoHabilitado: false,
+        estatusCredito: null,
+        diasCredito: null,
+        limiteCredito: null
     }
 ];
 
@@ -324,22 +362,68 @@ const mockUsosCfdi = [
     }
 ];
 
+const waitForInitialLoad = async () => {
+    await waitFor(() => {
+        expect(ClientService.getAll).toHaveBeenCalledWith('todos');
+        expect(CatalogService.getRegimenesFiscales).toHaveBeenCalled();
+        expect(CatalogService.getUsosCfdi).toHaveBeenCalled();
+
+        expect(screen.getByText('Cliente Mostrador')).toBeInTheDocument();
+        expect(screen.getByText('Empresa de Prueba')).toBeInTheDocument();
+    });
+};
+
+const getClientRow = async (clientName: string) => {
+    const client = await screen.findByText(clientName);
+    const row = client.closest('tr');
+
+    expect(row).not.toBeNull();
+
+    return row as HTMLElement;
+};
+
+const waitForActionButtons = async (
+    row: HTMLElement,
+    expectedCount: number
+) => {
+    await waitFor(() => {
+        expect(
+            within(row).getAllByRole('button')
+        ).toHaveLength(expectedCount);
+    });
+};
+
 describe('ListClientsPage', () => {
     beforeEach(() => {
         jest.clearAllMocks();
 
-        jest.mocked(ClientService.getAll).mockResolvedValue(mockClients as any);
-        jest.mocked(ClientService.getPurchasesCount).mockResolvedValue(3);
+        localStorage.setItem(
+            'user',
+            JSON.stringify({
+                idUsuario: 1,
+                rol: 'ADMIN'
+            })
+        );
+
+        jest.mocked(ClientService.getAll).mockResolvedValue(
+            mockClients as any
+        );
+
+        jest.mocked(ClientService.getPurchasesCount).mockResolvedValue(4);
+
         jest.mocked(ClientService.delete).mockResolvedValue(undefined as any);
 
-        jest.mocked(CatalogService.getRegimenesFiscales)
-            .mockResolvedValue(mockRegimenes as any);
+        jest.mocked(CatalogService.getRegimenesFiscales).mockResolvedValue(
+            mockRegimenes as any
+        );
 
-        jest.mocked(CatalogService.getUsosCfdi)
-            .mockResolvedValue(mockUsosCfdi as any);
+        jest.mocked(CatalogService.getUsosCfdi).mockResolvedValue(
+            mockUsosCfdi as any
+        );
     });
 
     afterEach(() => {
+        localStorage.clear();
         jest.restoreAllMocks();
     });
 
@@ -348,59 +432,50 @@ describe('ListClientsPage', () => {
             render(<ListClientsPage />);
 
             expect(
-                screen.getByRole('heading', { name: 'Lista de clientes' })
+                screen.getByRole('heading', {
+                    name: 'Lista de clientes'
+                })
             ).toBeInTheDocument();
 
             expect(
-                screen.getByRole('button', { name: 'Agregar cliente' })
+                screen.getByRole('button', {
+                    name: 'Agregar cliente'
+                })
             ).toBeInTheDocument();
 
-            await screen.findByText('Cliente de prueba');
+            await waitForInitialLoad();
         });
 
         it('consulta clientes y catálogos al cargar la página', async () => {
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            await waitForInitialLoad();
 
-            await waitFor(() => {
-                expect(ClientService.getAll).toHaveBeenCalledWith('todos');
-
-                expect(
-                    CatalogService.getRegimenesFiscales
-                ).toHaveBeenCalled();
-
-                expect(
-                    CatalogService.getUsosCfdi
-                ).toHaveBeenCalled();
-            });
+            expect(ClientService.getAll).toHaveBeenCalledWith('todos');
+            expect(CatalogService.getRegimenesFiscales).toHaveBeenCalledTimes(1);
+            expect(CatalogService.getUsosCfdi).toHaveBeenCalledTimes(1);
         });
 
         it('muestra los datos de los clientes en la tabla', async () => {
             render(<ListClientsPage />);
 
-            expect(
-                await screen.findByText('Cliente de prueba')
-            ).toBeInTheDocument();
+            await waitForInitialLoad();
 
-            expect(
-                screen.getByText('cliente@ejemplo.com')
-            ).toBeInTheDocument();
-
-            expect(
-                screen.getByText('2291234567')
-            ).toBeInTheDocument();
-
-            expect(
-                screen.getByText('XAXX010101000')
-            ).toBeInTheDocument();
+            expect(screen.getByText('cliente@ejemplo.com')).toBeInTheDocument();
+            expect(screen.getByText('2291234567')).toBeInTheDocument();
+            expect(screen.getByText('XAXX010101000')).toBeInTheDocument();
+            expect(screen.getByText('empresa@ejemplo.com')).toBeInTheDocument();
         });
 
         it('muestra el régimen fiscal y el uso de CFDI', async () => {
             render(<ListClientsPage />);
 
+            await waitForInitialLoad();
+
             expect(
-                await screen.findAllByText('601 General de Ley Personas Morales')
+                screen.getAllByText(
+                    '601 General de Ley Personas Morales'
+                )
             ).toHaveLength(2);
 
             expect(
@@ -419,18 +494,11 @@ describe('ListClientsPage', () => {
 
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            await screen.findByText('Cliente Mostrador');
 
-            const rows = screen.getAllByRole('row');
-            const clientRow = rows.find((row) =>
-                within(row).queryByText('Cliente de prueba')
-            );
+            const row = await getClientRow('Cliente Mostrador');
 
-            expect(clientRow).toBeDefined();
-
-            if (clientRow) {
-                expect(within(clientRow).getAllByText('-')).toHaveLength(2);
-            }
+            expect(within(row).getAllByText('-')).toHaveLength(2);
         });
 
         it('muestra el mensaje cuando no hay clientes', async () => {
@@ -442,35 +510,33 @@ describe('ListClientsPage', () => {
                 await screen.findByText('No se encontraron clientes.')
             ).toBeInTheDocument();
         });
+
+        it('muestra el estado de crédito inactivo cuando no está habilitado', async () => {
+            render(<ListClientsPage />);
+
+            await waitForInitialLoad();
+
+            expect(screen.getAllByText('Inactivo')).toHaveLength(2);
+        });
     });
 
     describe('Filtros de clientes', () => {
         it('muestra las opciones de filtro', async () => {
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            await waitForInitialLoad();
 
-            expect(
-                screen.getByRole('button', { name: 'Todos' })
-            ).toBeInTheDocument();
-
-            expect(
-                screen.getByRole('button', { name: 'Mostrador' })
-            ).toBeInTheDocument();
-
-            expect(
-                screen.getByRole('button', { name: 'Fiscales' })
-            ).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Todos' })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Mostrador' })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Fiscales' })).toBeInTheDocument();
         });
 
         it('consulta los clientes del filtro Mostrador', async () => {
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            await waitForInitialLoad();
 
-            fireEvent.click(
-                screen.getByRole('button', { name: 'Mostrador' })
-            );
+            fireEvent.click(screen.getByRole('button', { name: 'Mostrador' }));
 
             await waitFor(() => {
                 expect(ClientService.getAll).toHaveBeenCalledWith('mostrador');
@@ -480,11 +546,9 @@ describe('ListClientsPage', () => {
         it('consulta los clientes del filtro Fiscales', async () => {
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            await waitForInitialLoad();
 
-            fireEvent.click(
-                screen.getByRole('button', { name: 'Fiscales' })
-            );
+            fireEvent.click(screen.getByRole('button', { name: 'Fiscales' }));
 
             await waitFor(() => {
                 expect(ClientService.getAll).toHaveBeenCalledWith('factura');
@@ -494,13 +558,11 @@ describe('ListClientsPage', () => {
         it('no cambia el filtro cuando el valor recibido es nulo', async () => {
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            await waitForInitialLoad();
 
-            const filtroActual = screen.getByRole('button', {
-                name: 'Todos'
-            });
-
-            expect(filtroActual).toHaveAttribute('aria-pressed', 'true');
+            expect(
+                screen.getByRole('button', { name: 'Todos' })
+            ).toHaveAttribute('aria-pressed', 'true');
         });
     });
 
@@ -508,45 +570,35 @@ describe('ListClientsPage', () => {
         it('filtra clientes por nombre', async () => {
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            await waitForInitialLoad();
 
             fireEvent.change(
                 screen.getByPlaceholderText('Buscar cliente...'),
-                { target: { value: 'Impresiones del Puerto' } }
+                { target: { value: 'Empresa de Prueba' } }
             );
 
-            expect(
-                screen.getByText('Impresiones del Puerto')
-            ).toBeInTheDocument();
-
-            expect(
-                screen.queryByText('Cliente de prueba')
-            ).not.toBeInTheDocument();
+            expect(screen.getByText('Empresa de Prueba')).toBeInTheDocument();
+            expect(screen.queryByText('Cliente Mostrador')).not.toBeInTheDocument();
         });
 
         it('filtra clientes por correo electrónico', async () => {
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            await waitForInitialLoad();
 
             fireEvent.change(
                 screen.getByPlaceholderText('Buscar cliente...'),
                 { target: { value: 'cliente@ejemplo.com' } }
             );
 
-            expect(
-                screen.getByText('Cliente de prueba')
-            ).toBeInTheDocument();
-
-            expect(
-                screen.queryByText('Impresiones del Puerto')
-            ).not.toBeInTheDocument();
+            expect(screen.getByText('Cliente Mostrador')).toBeInTheDocument();
+            expect(screen.queryByText('Empresa de Prueba')).not.toBeInTheDocument();
         });
 
         it('muestra el mensaje cuando la búsqueda no encuentra resultados', async () => {
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            await waitForInitialLoad();
 
             fireEvent.change(
                 screen.getByPlaceholderText('Buscar cliente...'),
@@ -563,7 +615,7 @@ describe('ListClientsPage', () => {
         it('abre el formulario para agregar un cliente nuevo', async () => {
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            await waitForInitialLoad();
 
             fireEvent.click(
                 screen.getByRole('button', { name: 'Agregar cliente' })
@@ -575,18 +627,19 @@ describe('ListClientsPage', () => {
                 })
             ).toBeInTheDocument();
 
-            expect(screen.getByTestId('client-edit-id')).toHaveTextContent(
-                'nuevo'
-            );
+            expect(screen.getByTestId('client-edit-id')).toHaveTextContent('nuevo');
         });
 
         it('abre el formulario con los datos del cliente seleccionado', async () => {
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            await waitForInitialLoad();
+
+            const row = await getClientRow('Cliente Mostrador');
+            await waitForActionButtons(row, 4);
 
             fireEvent.click(
-                screen.getAllByRole('button', { name: 'Editar' })[0]
+                within(row).getByRole('button', { name: 'Editar' })
             );
 
             expect(
@@ -595,15 +648,13 @@ describe('ListClientsPage', () => {
                 })
             ).toBeInTheDocument();
 
-            expect(screen.getByTestId('client-edit-id')).toHaveTextContent(
-                '1'
-            );
+            expect(screen.getByTestId('client-edit-id')).toHaveTextContent('1');
         });
 
         it('cierra el formulario al cancelar', async () => {
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            await waitForInitialLoad();
 
             fireEvent.click(
                 screen.getByRole('button', { name: 'Agregar cliente' })
@@ -623,10 +674,9 @@ describe('ListClientsPage', () => {
         it('recarga los clientes cuando el formulario informa un guardado exitoso', async () => {
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            await waitForInitialLoad();
 
-            const llamadasIniciales = jest.mocked(ClientService.getAll).mock
-                .calls.length;
+            const llamadasIniciales = jest.mocked(ClientService.getAll).mock.calls.length;
 
             fireEvent.click(
                 screen.getByRole('button', { name: 'Agregar cliente' })
@@ -656,12 +706,15 @@ describe('ListClientsPage', () => {
         it('abre el diálogo de última compra con el ID correcto', async () => {
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            await waitForInitialLoad();
+
+            const row = await getClientRow('Cliente Mostrador');
+            await waitForActionButtons(row, 4);
 
             fireEvent.click(
-                screen.getAllByRole('button', {
+                within(row).getByRole('button', {
                     name: 'Última compra'
-                })[0]
+                })
             );
 
             expect(
@@ -676,12 +729,15 @@ describe('ListClientsPage', () => {
         it('cierra el diálogo de última compra', async () => {
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            await waitForInitialLoad();
+
+            const row = await getClientRow('Cliente Mostrador');
+            await waitForActionButtons(row, 4);
 
             fireEvent.click(
-                screen.getAllByRole('button', {
+                within(row).getByRole('button', {
                     name: 'Última compra'
-                })[0]
+                })
             );
 
             fireEvent.click(
@@ -705,10 +761,13 @@ describe('ListClientsPage', () => {
 
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            const row = await getClientRow('Cliente Mostrador');
+            await waitForActionButtons(row, 4);
 
             fireEvent.click(
-                screen.getByRole('button', { name: 'Última compra' })
+                within(row).getByRole('button', {
+                    name: 'Última compra'
+                })
             );
 
             expect(
@@ -717,14 +776,218 @@ describe('ListClientsPage', () => {
         });
     });
 
+    describe('Solicitud de crédito', () => {
+        it('permite solicitar crédito cuando el cliente supera tres compras', async () => {
+            jest.mocked(ClientService.getPurchasesCount).mockResolvedValueOnce(4);
+
+            render(<ListClientsPage />);
+
+            await waitForInitialLoad();
+
+            const row = await getClientRow('Empresa de Prueba');
+            await waitForActionButtons(row, 4);
+
+            fireEvent.click(
+                within(row).getByRole('button', {
+                    name: 'Validar y solicitar crédito'
+                })
+            );
+
+            expect(await screen.findByTestId('credit-dialog')).toHaveTextContent(
+                'Empresa de Prueba'
+            );
+
+            expect(ClientService.getPurchasesCount).toHaveBeenCalledWith(2);
+        });
+
+        it('muestra un aviso cuando el cliente no supera tres compras', async () => {
+            jest.mocked(ClientService.getPurchasesCount).mockResolvedValueOnce(3);
+
+            render(<ListClientsPage />);
+
+            await waitForInitialLoad();
+
+            const row = await getClientRow('Cliente Mostrador');
+            await waitForActionButtons(row, 4);
+
+            fireEvent.click(
+                within(row).getByRole('button', {
+                    name: 'Validar y solicitar crédito'
+                })
+            );
+
+            expect(
+                await screen.findByRole('dialog', {
+                    name: 'Criterio de crédito no cumplido'
+                })
+            ).toBeInTheDocument();
+
+            expect(
+                screen.getByText('Compras completadas actuales:')
+            ).toBeInTheDocument();
+
+            expect(
+                screen.getByText('Requisito mínimo:')
+            ).toBeInTheDocument();
+
+            expect(
+                screen.queryByTestId('credit-dialog')
+            ).not.toBeInTheDocument();
+        });
+
+        it('cierra el aviso de criterio de crédito no cumplido', async () => {
+            jest.mocked(ClientService.getPurchasesCount).mockResolvedValueOnce(2);
+
+            render(<ListClientsPage />);
+
+            await waitForInitialLoad();
+
+            const row = await getClientRow('Cliente Mostrador');
+            await waitForActionButtons(row, 4);
+
+            fireEvent.click(
+                within(row).getByRole('button', {
+                    name: 'Validar y solicitar crédito'
+                })
+            );
+
+            await screen.findByRole('dialog', {
+                name: 'Criterio de crédito no cumplido'
+            });
+
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Entendido' })
+            );
+
+            expect(
+                screen.queryByRole('dialog', {
+                    name: 'Criterio de crédito no cumplido'
+                })
+            ).not.toBeInTheDocument();
+        });
+
+        it('muestra un error cuando no puede consultar las compras del cliente', async () => {
+            jest.mocked(ClientService.getPurchasesCount).mockRejectedValueOnce(
+                new Error('Error de conexión')
+            );
+
+            render(<ListClientsPage />);
+
+            await waitForInitialLoad();
+
+            const row = await getClientRow('Empresa de Prueba');
+            await waitForActionButtons(row, 4);
+
+            fireEvent.click(
+                within(row).getByRole('button', {
+                    name: 'Validar y solicitar crédito'
+                })
+            );
+
+            await waitFor(() => {
+                expect(mockShowToast).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        severity: 'error',
+                        summary: 'Error de validación',
+                        detail: 'No se pudo verificar el historial de compras del cliente.'
+                    })
+                );
+            });
+
+            expect(
+                screen.queryByTestId('credit-dialog')
+            ).not.toBeInTheDocument();
+        });
+
+        it('actualiza los clientes cuando se habilita el crédito', async () => {
+            jest.mocked(ClientService.getPurchasesCount).mockResolvedValueOnce(4);
+
+            render(<ListClientsPage />);
+
+            await waitForInitialLoad();
+
+            const row = await getClientRow('Empresa de Prueba');
+            await waitForActionButtons(row, 4);
+
+            const llamadasIniciales = jest.mocked(ClientService.getAll).mock.calls.length;
+
+            fireEvent.click(
+                within(row).getByRole('button', {
+                    name: 'Validar y solicitar crédito'
+                })
+            );
+
+            await screen.findByTestId('credit-dialog');
+
+            fireEvent.click(
+                screen.getByRole('button', {
+                    name: 'Habilitar crédito mock'
+                })
+            );
+
+            await waitFor(() => {
+                expect(ClientService.getAll).toHaveBeenCalledTimes(
+                    llamadasIniciales + 1
+                );
+            });
+
+            expect(
+                screen.queryByTestId('credit-dialog')
+            ).not.toBeInTheDocument();
+
+            expect(mockShowToast).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    severity: 'success',
+                    summary: 'Crédito habilitado'
+                })
+            );
+        });
+
+        it('muestra el error recibido del diálogo de crédito', async () => {
+            jest.mocked(ClientService.getPurchasesCount).mockResolvedValueOnce(4);
+
+            render(<ListClientsPage />);
+
+            await waitForInitialLoad();
+
+            const row = await getClientRow('Empresa de Prueba');
+            await waitForActionButtons(row, 4);
+
+            fireEvent.click(
+                within(row).getByRole('button', {
+                    name: 'Validar y solicitar crédito'
+                })
+            );
+
+            await screen.findByTestId('credit-dialog');
+
+            fireEvent.click(
+                screen.getByRole('button', {
+                    name: 'Simular error de crédito'
+                })
+            );
+
+            expect(mockShowToast).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    severity: 'error',
+                    summary: 'Error',
+                    detail: 'Error al habilitar crédito'
+                })
+            );
+        });
+    });
+
     describe('Eliminación de clientes', () => {
         it('abre el diálogo de confirmación', async () => {
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            await waitForInitialLoad();
+
+            const row = await getClientRow('Cliente Mostrador');
+            await waitForActionButtons(row, 4);
 
             fireEvent.click(
-                screen.getAllByRole('button', { name: 'Eliminar' })[0]
+                within(row).getByRole('button', { name: 'Eliminar' })
             );
 
             expect(
@@ -739,10 +1002,13 @@ describe('ListClientsPage', () => {
         it('cierra la confirmación al seleccionar No', async () => {
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            await waitForInitialLoad();
+
+            const row = await getClientRow('Cliente Mostrador');
+            await waitForActionButtons(row, 4);
 
             fireEvent.click(
-                screen.getAllByRole('button', { name: 'Eliminar' })[0]
+                within(row).getByRole('button', { name: 'Eliminar' })
             );
 
             fireEvent.click(
@@ -759,10 +1025,13 @@ describe('ListClientsPage', () => {
         it('elimina correctamente un cliente', async () => {
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            await waitForInitialLoad();
+
+            const row = await getClientRow('Cliente Mostrador');
+            await waitForActionButtons(row, 4);
 
             fireEvent.click(
-                screen.getAllByRole('button', { name: 'Eliminar' })[0]
+                within(row).getByRole('button', { name: 'Eliminar' })
             );
 
             fireEvent.click(
@@ -775,7 +1044,7 @@ describe('ListClientsPage', () => {
 
             await waitFor(() => {
                 expect(
-                    screen.queryByText('Cliente de prueba')
+                    screen.queryByText('Cliente Mostrador')
                 ).not.toBeInTheDocument();
             });
 
@@ -795,13 +1064,18 @@ describe('ListClientsPage', () => {
 
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            await waitForInitialLoad();
+
+            const row = await getClientRow('Cliente Mostrador');
+            await waitForActionButtons(row, 4);
 
             fireEvent.click(
-                screen.getAllByRole('button', { name: 'Eliminar' })[0]
+                within(row).getByRole('button', { name: 'Eliminar' })
             );
 
-            const dialog = screen.getByRole('dialog', { name: 'Confirmar' });
+            const dialog = screen.getByRole('dialog', {
+                name: 'Confirmar'
+            });
 
             fireEvent.click(
                 within(dialog).getByRole('button', { name: 'Sí' })
@@ -818,7 +1092,7 @@ describe('ListClientsPage', () => {
             });
 
             expect(
-                within(dialog).getByText('Cliente de prueba')
+                within(dialog).getByText('Cliente Mostrador')
             ).toBeInTheDocument();
         });
 
@@ -832,10 +1106,11 @@ describe('ListClientsPage', () => {
 
             render(<ListClientsPage />);
 
-            await screen.findByText('Cliente de prueba');
+            const row = await getClientRow('Cliente Mostrador');
+            await waitForActionButtons(row, 4);
 
             fireEvent.click(
-                screen.getByRole('button', { name: 'Eliminar' })
+                within(row).getByRole('button', { name: 'Eliminar' })
             );
 
             fireEvent.click(
@@ -843,6 +1118,86 @@ describe('ListClientsPage', () => {
             );
 
             expect(ClientService.delete).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('Permisos de usuario', () => {
+        it('muestra cuatro acciones para un administrador', async () => {
+            localStorage.setItem(
+                'user',
+                JSON.stringify({ idUsuario: 1, rol: 'ADMIN' })
+            );
+
+            render(<ListClientsPage />);
+
+            const row = await getClientRow('Cliente Mostrador');
+
+            await waitForActionButtons(row, 4);
+
+            expect(
+                within(row).getByRole('button', {
+                    name: 'Validar y solicitar crédito'
+                })
+            ).toBeInTheDocument();
+
+            expect(
+                within(row).getByRole('button', { name: 'Última compra' })
+            ).toBeInTheDocument();
+
+            expect(
+                within(row).getByRole('button', { name: 'Editar' })
+            ).toBeInTheDocument();
+
+            expect(
+                within(row).getByRole('button', { name: 'Eliminar' })
+            ).toBeInTheDocument();
+        });
+
+        it('no muestra la opción de solicitar crédito a un empleado', async () => {
+            localStorage.setItem(
+                'user',
+                JSON.stringify({ idUsuario: 2, rol: 'EMPLEADO' })
+            );
+
+            render(<ListClientsPage />);
+
+            const row = await getClientRow('Cliente Mostrador');
+
+            await waitForActionButtons(row, 3);
+
+            expect(
+                within(row).queryByRole('button', {
+                    name: 'Validar y solicitar crédito'
+                })
+            ).not.toBeInTheDocument();
+
+            expect(
+                within(row).getByRole('button', { name: 'Última compra' })
+            ).toBeInTheDocument();
+
+            expect(
+                within(row).getByRole('button', { name: 'Editar' })
+            ).toBeInTheDocument();
+
+            expect(
+                within(row).getByRole('button', { name: 'Eliminar' })
+            ).toBeInTheDocument();
+        });
+
+        it('no permite abrir la solicitud de crédito si no es administrador', async () => {
+            localStorage.setItem(
+                'user',
+                JSON.stringify({ idUsuario: 2, rol: 'EMPLEADO' })
+            );
+
+            render(<ListClientsPage />);
+
+            await getClientRow('Cliente Mostrador');
+
+            expect(ClientService.getPurchasesCount).not.toHaveBeenCalled();
+            expect(
+                screen.queryByTestId('credit-dialog')
+            ).not.toBeInTheDocument();
         });
     });
 
@@ -876,7 +1231,7 @@ describe('ListClientsPage', () => {
             try {
                 render(<ListClientsPage />);
 
-                await screen.findByText('Cliente de prueba');
+                await screen.findByText('Cliente Mostrador');
 
                 await waitFor(() => {
                     expect(consoleError).toHaveBeenCalledWith(
