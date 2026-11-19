@@ -94,7 +94,7 @@ export const OrderService = {
 
         const res = await apiClient(`${API_BASE_URL}/ordenes/${idOrden}/archivo`, {
             method: 'POST',
-            body: formData // No enviamos Content-Type para que el navegador genere el multipart/form-data
+            body: formData
         });
         if (!res.ok) {
             throw new Error('Error al subir el archivo');

@@ -225,8 +225,19 @@ const WorkshopListPage = () => {
                         </div>
                     </div>
                 </Card>
-
                 <div className="card shadow-2">
+                    <div className="flex justify-content-between align-items-center mb-3">
+                        <h3 className="m-0 text-2xl font-bold text-900">Órdenes en taller</h3>
+                        <Button
+                            icon="pi pi-refresh"
+                            rounded
+                            text
+                            onClick={loadOrders}
+                            loading={loading}
+                            tooltip="Actualizar lista"
+                            tooltipOptions={{ position: 'left' }}
+                        />
+                    </div>
                     <DataTable
                         value={orders}
                         paginator
