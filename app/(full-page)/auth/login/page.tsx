@@ -5,17 +5,24 @@ import React, { useContext, useState, useRef } from 'react';
 import { Button } from 'primereact/button';
 import { Password } from 'primereact/password';
 import { InputText } from 'primereact/inputtext';
+import { Dialog } from 'primereact/dialog';
 import { Toast } from 'primereact/toast';
 import { classNames } from 'primereact/utils';
 import { LayoutContext } from '../../../../layout/context/layoutcontext';
 import { AuthService } from '@/app/service/authService';
+import { UserService } from '@/app/service/userService';
 import { LoginRequest } from '@/app/types/auth';
 
 const LoginPage = () => {
-    // 1. Estados
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
+    const [showChangePassDialog, setShowChangePassDialog] = useState(false);
+    const [cpEmail, setCpEmail] = useState('');
+    const [passwordActual, setPasswordActual] = useState('');
+    const [nuevaPassword, setNuevaPassword] = useState('');
+    const [confirmarPassword, setConfirmarPassword] = useState('');
+    const [isChangingPass, setIsChangingPass] = useState(false);
 
     const { layoutConfig } = useContext(LayoutContext);
     const router = useRouter();
@@ -90,6 +97,82 @@ const LoginPage = () => {
         }
     };
 
+    const openChangePasswordModal = () => {
+        setCpEmail(email.trim());
+        setPasswordActual('');
+        setNuevaPassword('');
+        setConfirmarPassword('');
+        setShowChangePassDialog(true);
+    };
+
+    const handleChangePassword = async () => {
+        if (!cpEmail.trim() || !passwordActual || !nuevaPassword || !confirmarPassword) {
+            toast.current?.show({
+                severity: 'warn',
+                summary: 'Campos requeridos',
+                detail: 'Completa todos los campos para continuar.'
+            });
+            return;
+        }
+
+        if (nuevaPassword !== confirmarPassword) {
+            toast.current?.show({
+                severity: 'warn',
+                summary: 'No coinciden',
+                detail: 'La nueva contraseña y su confirmación deben ser iguales.'
+            });
+            return;
+        }
+
+        if (passwordActual === nuevaPassword) {
+            toast.current?.show({
+                severity: 'warn',
+                summary: 'Contraseña sin cambios',
+                detail: 'La nueva contraseña debe ser diferente a la actual.'
+            });
+            return;
+        }
+
+        setIsChangingPass(true);
+        try {
+            const authData = await AuthService.login({
+                email: cpEmail.trim(),
+                password: passwordActual
+            });
+
+            if (authData.status === 401 || authData.error || !authData.idUsuario) {
+                throw new Error('El correo o la contraseña actual son incorrectos.');
+            }
+
+            const res = await UserService.cambiarPassword(
+                authData.idUsuario,
+                {
+                    passwordActual,
+                    nuevaPassword
+                },
+                authData.token
+            );
+
+            toast.current?.show({
+                severity: 'success',
+                summary: 'Contraseña Actualizada',
+                detail: res.mensaje || 'Contraseña actualizada exitosamente. Ya puedes iniciar sesión.'
+            });
+
+            setEmail(cpEmail.trim());
+            setPassword('');
+            setShowChangePassDialog(false);
+        } catch (error: any) {
+            toast.current?.show({
+                severity: 'error',
+                summary: 'Error',
+                detail: error.message || 'No se pudo cambiar la contraseña.'
+            });
+        } finally {
+            setIsChangingPass(false);
+        }
+    };
+
     return (
         <div className={containerClassName}>
             <Toast ref={toast} />
@@ -136,13 +219,22 @@ const LoginPage = () => {
                                 placeholder="Contraseña"
                                 toggleMask
                                 feedback={false}
-                                className="w-full mb-5"
+                                className="w-full mb-3"
                                 inputClassName="w-full p-3 md:w-30rem"
                                 onKeyDown={handleKeyDown}
                             />
-                            <div className="flex align-items-center justify-content-between mb-5 gap-5">
-                                <div className="flex align-items-center"></div>
+
+                            {/* ACCIÓN: CAMBIAR CONTRASEÑA */}
+                            <div className="flex align-items-center justify-content-end mb-5">
+                                <button
+                                    type="button"
+                                    onClick={openChangePasswordModal}
+                                    className="p-link font-medium text-primary hover:underline cursor-pointer"
+                                >
+                                    Cambiar contraseña
+                                </button>
                             </div>
+
                             {/* BOTÓN LOGIN */}
                             <Button
                                 label="Iniciar sesión"
@@ -154,6 +246,95 @@ const LoginPage = () => {
                     </div>
                 </div>
             </div>
+
+            {/* MODAL DE CAMBIO DE CONTRASEÑA */}
+            <Dialog
+                header={
+                    <div className="flex align-items-center gap-2">
+                        <i className="pi pi-key text-primary text-xl" />
+                        <span>Cambiar contraseña</span>
+                    </div>
+                }
+                visible={showChangePassDialog}
+                style={{ width: '90vw', maxWidth: '450px' }}
+                modal
+                onHide={() => setShowChangePassDialog(false)}
+                footer={
+                    <div className="flex justify-content-end gap-2">
+                        <Button
+                            label="Cancelar"
+                            icon="pi pi-times"
+                            text
+                            severity="secondary"
+                            onClick={() => setShowChangePassDialog(false)}
+                            disabled={isChangingPass}
+                        />
+                        <Button
+                            label="Actualizar contraseña"
+                            icon="pi pi-check"
+                            onClick={handleChangePassword}
+                            loading={isChangingPass}
+                        />
+                    </div>
+                }
+            >
+                <div className="flex flex-column gap-3 pt-2">
+                    <div className="field m-0">
+                        <label htmlFor="cpEmail" className="font-bold block mb-2">Correo Electrónico</label>
+                        <InputText
+                            id="cpEmail"
+                            type="email"
+                            value={cpEmail}
+                            onChange={(e) => setCpEmail(e.target.value)}
+                            placeholder="correo@ejemplo.com"
+                            className="w-full"
+                        />
+                    </div>
+
+                    <div className="field m-0">
+                        <label htmlFor="passwordActual" className="font-bold block mb-2">Contraseña actual</label>
+                        <Password
+                            inputId="passwordActual"
+                            value={passwordActual}
+                            onChange={(e) => setPasswordActual(e.target.value)}
+                            placeholder="Ingresa tu contraseña actual"
+                            toggleMask
+                            feedback={false}
+                            className="w-full"
+                            inputClassName="w-full"
+                        />
+                    </div>
+
+                    <div className="field m-0">
+                        <label htmlFor="nuevaPassword" className="font-bold block mb-2">Nueva contraseña</label>
+                        <Password
+                            inputId="nuevaPassword"
+                            value={nuevaPassword}
+                            onChange={(e) => setNuevaPassword(e.target.value)}
+                            placeholder="Ingresa la nueva contraseña"
+                            toggleMask
+                            className="w-full"
+                            inputClassName="w-full"
+                        />
+                    </div>
+
+                    <div className="field m-0">
+                        <label htmlFor="confirmarPassword" className="font-bold block mb-2">Confirmar nueva contraseña</label>
+                        <Password
+                            inputId="confirmarPassword"
+                            value={confirmarPassword}
+                            onChange={(e) => setConfirmarPassword(e.target.value)}
+                            placeholder="Repite la nueva contraseña"
+                            toggleMask
+                            className="w-full"
+                            inputClassName="w-full"
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleChangePassword();
+                            }}
+                        />
+                    </div>
+                </div>
+            </Dialog>
         </div>
     );
 };

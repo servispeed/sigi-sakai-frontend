@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import ListOrderPage from './page';
 import { OrderService } from '@/app/service/orderService';
@@ -503,7 +503,6 @@ describe('ListOrderPage', () => {
                 '/timeline?id=101'
             );
         });
-
     });
 
     describe('Cancelación de órdenes', () => {
@@ -650,7 +649,7 @@ describe('ListOrderPage', () => {
             await openDelivery(0);
 
             expect(
-                await screen.findByText('Confirmar Entrega')
+                await screen.findByText('Confirmar entrega')
             ).toBeInTheDocument();
 
             expect(
@@ -658,7 +657,7 @@ describe('ListOrderPage', () => {
             ).toBeInTheDocument();
 
             expect(
-                screen.getByRole('button', { name: 'Entregar Orden' })
+                screen.getByRole('button', { name: 'Entregar orden' })
             ).toBeInTheDocument();
         });
 
@@ -666,7 +665,7 @@ describe('ListOrderPage', () => {
             await openDelivery(0);
 
             fireEvent.click(
-                await screen.findByRole('button', { name: 'Entregar Orden' })
+                await screen.findByRole('button', { name: 'Entregar orden' })
             );
 
             await waitFor(() => {
@@ -685,37 +684,50 @@ describe('ListOrderPage', () => {
             );
         });
 
-        it('bloquea la entrega cuando existe un adeudo', async () => {
+        it('permite confirmar la entrega con advertencia cuando existe un adeudo', async () => {
             await openDelivery(1);
 
             expect(
-                await screen.findByText('¡Orden con Adeudo!')
+                await screen.findByText('Confirmar entrega con adeudo')
             ).toBeInTheDocument();
 
-            expect(screen.getByText('Pago Pendiente')).toBeInTheDocument();
+            expect(screen.getByText('Orden con saldo pendiente')).toBeInTheDocument();
             expect(screen.getByText('$200.00')).toBeInTheDocument();
 
             expect(
-                screen.queryByRole('button', { name: 'Entregar Orden' })
-            ).not.toBeInTheDocument();
-
-            expect(
-                screen.getByRole('button', { name: 'Ir a Caja' })
+                screen.getByRole('button', { name: 'Ir a caja' })
             ).toBeInTheDocument();
 
-            expect(OrderService.avanzarEstatus).not.toHaveBeenCalled();
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Entregar con adeudo' })
+            );
+
+            await waitFor(() => {
+                expect(OrderService.avanzarEstatus).toHaveBeenCalledWith(103, {
+                    idUsuario: 99,
+                    idEstatusDestino: 12,
+                    clienteAprobo: true
+                });
+            });
+
+            expect(mockShowToast).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    severity: 'success',
+                    summary: 'Entregada'
+                })
+            );
         });
 
         it('permite cerrar el diálogo de entrega', async () => {
             await openDelivery(0);
 
-            await screen.findByText('Confirmar Entrega');
+            await screen.findByText('Confirmar entrega');
 
             fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
 
             await waitFor(() => {
                 expect(
-                    screen.queryByText('Confirmar Entrega')
+                    screen.queryByText('Confirmar entrega')
                 ).not.toBeInTheDocument();
             });
         });
@@ -732,7 +744,7 @@ describe('ListOrderPage', () => {
             await openDelivery(0);
 
             fireEvent.click(
-                await screen.findByRole('button', { name: 'Entregar Orden' })
+                await screen.findByRole('button', { name: 'Entregar orden' })
             );
 
             await waitFor(() => {
@@ -753,7 +765,7 @@ describe('ListOrderPage', () => {
             await openDelivery(0);
 
             fireEvent.click(
-                await screen.findByRole('button', { name: 'Entregar Orden' })
+                await screen.findByRole('button', { name: 'Entregar orden' })
             );
 
             await waitFor(() => {

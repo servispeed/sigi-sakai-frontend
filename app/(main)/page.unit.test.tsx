@@ -1,4 +1,3 @@
-
 import React from 'react';
 import {
     fireEvent,
@@ -708,10 +707,10 @@ describe('Dashboard', () => {
     });
 
     describe('Entrega de órdenes', () => {
-        const openDelivery = async () => {
+        const openDelivery = async (orderText = 'Orden #102') => {
             render(<Dashboard />);
 
-            await screen.findByText('Orden #102');
+            await screen.findByText(orderText);
 
             fireEvent.click(screen.getByRole('button', { name: 'Entregar' }));
 
@@ -722,7 +721,7 @@ describe('Dashboard', () => {
             const dialog = await openDelivery();
 
             expect(
-                within(dialog).getByText('Confirmar Entrega')
+                within(dialog).getByText('Confirmar entrega')
             ).toBeInTheDocument();
             expect(
                 within(dialog).getByText(
@@ -731,12 +730,12 @@ describe('Dashboard', () => {
             ).toBeInTheDocument();
         });
 
-        it('registra la entrega de una orden sin adeudo', async () => {
+        it('registra la entrega de una orden', async () => {
             const dialog = await openDelivery();
 
             fireEvent.click(
                 within(dialog).getByRole('button', {
-                    name: 'Entregar Orden'
+                    name: 'Entregar orden'
                 })
             );
 
@@ -760,31 +759,50 @@ describe('Dashboard', () => {
             );
         });
 
-        it('muestra el adeudo y no permite entregar una orden con saldo pendiente', async () => {
-            jest.mocked(OrderService.getOrdenesActivas).mockResolvedValue({
+        it('permite confirmar la entrega cuando la orden tiene adeudo', async () => {
+            jest.mocked(OrderService.getOrdenesActivas).mockResolvedValueOnce({
                 content: [
                     {
-                        ...mockOrders[1],
-                        montoPagado: 300
+                        idOrden: 103,
+                        idUsuarioDisenador: 5,
+                        idCliente: 10,
+                        idEstatusActual: 6,
+                        montoTotal: 500,
+                        montoPagado: 300,
+                        fechaCreacion: '2026-10-21T12:00:00'
                     }
                 ],
                 page: { totalElements: 1 }
             } as any);
 
-            render(<Dashboard />);
+            const dialog = await openDelivery('Orden #103');
 
-            await screen.findByText('Orden #102');
-
-            fireEvent.click(screen.getByRole('button', { name: 'Entregar' }));
-
-            const dialog = screen.getByRole('dialog', { name: 'Dialog' });
-
-            expect(within(dialog).getByText('¡Orden con Adeudo!')).toBeInTheDocument();
-            expect(within(dialog).getByText('Pago Pendiente')).toBeInTheDocument();
-            expect(within(dialog).getByText('$200.00')).toBeInTheDocument();
             expect(
-                within(dialog).queryByRole('button', { name: 'Entregar Orden' })
-            ).not.toBeInTheDocument();
+                within(dialog).getByText('Confirmar entrega con adeudo')
+            ).toBeInTheDocument();
+            expect(
+                within(dialog).getByText('Orden con saldo pendiente')
+            ).toBeInTheDocument();
+            expect(
+                within(dialog).getByRole('button', { name: 'Ir a caja' })
+            ).toBeInTheDocument();
+
+            fireEvent.click(
+                within(dialog).getByRole('button', {
+                    name: 'Entregar con adeudo'
+                })
+            );
+
+            await waitFor(() => {
+                expect(OrderService.avanzarEstatus).toHaveBeenCalledWith(
+                    103,
+                    {
+                        idUsuario: 7,
+                        idEstatusDestino: 12,
+                        clienteAprobo: true
+                    }
+                );
+            });
         });
 
         it('muestra un error cuando falla la entrega', async () => {
@@ -796,7 +814,7 @@ describe('Dashboard', () => {
 
             fireEvent.click(
                 within(dialog).getByRole('button', {
-                    name: 'Entregar Orden'
+                    name: 'Entregar orden'
                 })
             );
 
@@ -818,7 +836,7 @@ describe('Dashboard', () => {
 
             fireEvent.click(
                 within(dialog).getByRole('button', {
-                    name: 'Entregar Orden'
+                    name: 'Entregar orden'
                 })
             );
 

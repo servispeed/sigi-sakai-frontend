@@ -575,9 +575,11 @@ const Dashboard = () => {
             {/* --- MODAL DE ENTREGA --- */}
             <Dialog
                 header={
-                    <div className={`flex align-items-center gap-2 ${hasPendingDebt ? 'text-red-600' : 'text-green-700'}`}>
-                        <i className={`pi ${hasPendingDebt ? 'pi-exclamation-circle' : 'pi-check-circle'} text-xl`} />
-                        <span className="font-bold">{hasPendingDebt ? '¡Orden con Adeudo!' : 'Confirmar Entrega'}</span>
+                    <div className={`flex align-items-center gap-2 ${hasPendingDebt ? 'text-orange-600' : 'text-green-700'}`}>
+                        <i className={`pi ${hasPendingDebt ? 'pi-exclamation-triangle' : 'pi-check-circle'} text-xl`} />
+                        <span className="font-bold">
+                            {hasPendingDebt ? 'Confirmar entrega con adeudo' : 'Confirmar entrega'}
+                        </span>
                     </div>
                 }
                 visible={showDeliveryDialog}
@@ -586,29 +588,58 @@ const Dashboard = () => {
                 onHide={() => setShowDeliveryDialog(false)}
                 footer={
                     <div className="flex justify-content-end gap-2 pt-2">
-                        <Button label={hasPendingDebt ? "Cerrar" : "Cancelar"} icon="pi pi-times" onClick={() => setShowDeliveryDialog(false)} className="p-button-text" />
-                        {!hasPendingDebt && <Button label="Entregar Orden" icon="pi pi-check" onClick={confirmDelivery} severity="success" loading={isDelivering} />}
+                        <Button
+                            label="Cancelar"
+                            icon="pi pi-times"
+                            onClick={() => setShowDeliveryDialog(false)}
+                            className="p-button-text p-button-secondary"
+                        />
                         {hasPendingDebt && (
                             <Link href="/counter" passHref legacyBehavior>
-                                <Button label="Ir a Caja" icon="pi pi-wallet" severity="warning" />
+                                <Button
+                                    label="Ir a caja"
+                                    icon="pi pi-wallet"
+                                    severity="warning"
+                                    outlined
+                                />
                             </Link>
                         )}
+                        <Button
+                            label={hasPendingDebt ? "Entregar con adeudo" : "Entregar orden"}
+                            icon="pi pi-check"
+                            onClick={confirmDelivery}
+                            severity={hasPendingDebt ? "warning" : "success"}
+                            loading={isDelivering}
+                        />
                     </div>
                 }
             >
                 {hasPendingDebt ? (
-                    <div className="pt-2 text-center">
-                        <div className="inline-flex align-items-center justify-content-center bg-red-100 border-circle mb-3" style={{ width: '64px', height: '64px' }}>
-                            <i className="pi pi-wallet text-red-500 text-3xl"></i>
+                    <div className="pt-2">
+                        <div className="flex align-items-center gap-3 p-3 border-1 border-orange-200 bg-orange-50 border-round mb-3">
+                            <i className="pi pi-exclamation-triangle text-orange-500 text-2xl"></i>
+                            <div>
+                                <span className="font-bold text-orange-900 block">Orden con saldo pendiente</span>
+                                <span className="text-sm text-orange-800">
+                                    Adeudo actual: <strong>${selectedOrderDebt.toFixed(2)}</strong>
+                                </span>
+                            </div>
                         </div>
-                        <h3 className="text-red-700 m-0 mb-2">Pago Pendiente</h3>
-                        <p className="m-0 text-lg mb-3">Esta orden tiene un saldo pendiente de:<br /><strong className="text-2xl text-900">${selectedOrderDebt.toFixed(2)}</strong></p>
-                        <p className="text-sm text-600">No es posible entregar la mercancía hasta que el saldo sea liquidado en su totalidad.</p>
+                        <p className="m-0 text-base text-900">
+                            ¿Confirmas que deseas entregar los productos dejando el saldo pendiente por cobrar?
+                        </p>
+                        <small className="text-500 block mt-2">
+                            La orden pasará al estatus &quot;Entregada&quot; conservando su registro de adeudo.
+                        </small>
                     </div>
                 ) : (
                     <div className="pt-2">
-                        <p className="m-0 text-lg">¿Confirmas que el cliente ha recibido sus productos satisfactoriamente?</p>
-                        <small className="text-500 block mt-2">La orden pasará al estatus &quot;Entregada&quot; y se archivará como completada.</small>
+                        <p className="m-0 text-lg">
+                            ¿Confirmas que el cliente ha recibido sus productos satisfactoriamente?
+                        </p>
+                        <small className="text-500 block mt-2">
+                            La orden pasará al estatus &quot;Entregada&quot; y se archivará como completada.
+                        </small>
                     </div>
                 )}
             </Dialog>

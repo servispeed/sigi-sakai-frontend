@@ -243,7 +243,10 @@ describe('UploadReceiptPage', () => {
     beforeEach(() => {
         jest.clearAllMocks();
 
-        mockGetPendientes.mockResolvedValue([mockSolicitud]);
+        mockGetPendientes.mockResolvedValue({
+            content: [mockSolicitud],
+            totalPages: 1
+        });
         mockGetProductos.mockResolvedValue(mockProductos);
 
         mockRegistrarCompraExitosa.mockResolvedValue(undefined);
@@ -306,7 +309,7 @@ describe('UploadReceiptPage', () => {
             await screen.findByText('Material para impresión')
         ).toBeInTheDocument();
 
-        expect(mockGetPendientes).toHaveBeenCalledTimes(1);
+        expect(mockGetPendientes).toHaveBeenCalledWith(0, 100);
         expect(mockGetProductos).toHaveBeenCalledTimes(1);
     });
 
@@ -365,7 +368,10 @@ describe('UploadReceiptPage', () => {
     });
 
     it('muestra un mensaje cuando la solicitud no existe para la orden', async () => {
-        mockGetPendientes.mockResolvedValueOnce([]);
+        mockGetPendientes.mockResolvedValueOnce({
+            content: [],
+            totalPages: 1
+        });
 
         renderPage();
 
@@ -408,27 +414,28 @@ describe('UploadReceiptPage', () => {
         consoleErrorSpy.mockRestore();
     });
 
-    it('continúa mostrando la solicitud si falla la carga del catálogo', async () => {
+    it('muestra un error si falla la carga del catálogo', async () => {
         const consoleErrorSpy = jest
             .spyOn(console, 'error')
             .mockImplementation(() => { });
 
-        mockGetProductos.mockRejectedValue(
+        mockGetProductos.mockRejectedValueOnce(
             new Error('Catálogo no disponible')
         );
 
         renderPage();
 
-        expect(
-            await screen.findByText('Material para impresión')
-        ).toBeInTheDocument();
-
-        expect(
-            screen.getByText('Producto ID #10')
-        ).toBeInTheDocument();
+        await waitFor(() => {
+            expect(mockToastShow).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    severity: 'error',
+                    summary: 'Error de Servidor'
+                })
+            );
+        });
 
         expect(consoleErrorSpy).toHaveBeenCalledWith(
-            'Error al cargar productos:',
+            'Error al cargar la información:',
             expect.any(Error)
         );
 
@@ -720,12 +727,15 @@ describe('UploadReceiptPage', () => {
     });
 
     it('muestra el panel de llegada cuando la solicitud está atrasada', async () => {
-        mockGetPendientes.mockResolvedValueOnce([
-            {
-                ...mockSolicitud,
-                idEstatus: 3
-            }
-        ]);
+        mockGetPendientes.mockResolvedValueOnce({
+            content: [
+                {
+                    ...mockSolicitud,
+                    idEstatus: 3
+                }
+            ],
+            totalPages: 1
+        });
 
         renderPage();
 
@@ -747,12 +757,15 @@ describe('UploadReceiptPage', () => {
     });
 
     it('abre el diálogo para confirmar la llegada de insumos atrasados', async () => {
-        mockGetPendientes.mockResolvedValueOnce([
-            {
-                ...mockSolicitud,
-                idEstatus: 3
-            }
-        ]);
+        mockGetPendientes.mockResolvedValueOnce({
+            content: [
+                {
+                    ...mockSolicitud,
+                    idEstatus: 3
+                }
+            ],
+            totalPages: 1
+        });
 
         renderPage();
 
@@ -778,12 +791,15 @@ describe('UploadReceiptPage', () => {
     });
 
     it('confirma la llegada de los insumos atrasados', async () => {
-        mockGetPendientes.mockResolvedValueOnce([
-            {
-                ...mockSolicitud,
-                idEstatus: 3
-            }
-        ]);
+        mockGetPendientes.mockResolvedValueOnce({
+            content: [
+                {
+                    ...mockSolicitud,
+                    idEstatus: 3
+                }
+            ],
+            totalPages: 1
+        });
 
         renderPage();
 
@@ -823,12 +839,15 @@ describe('UploadReceiptPage', () => {
             new Error('Error al confirmar llegada')
         );
 
-        mockGetPendientes.mockResolvedValueOnce([
-            {
-                ...mockSolicitud,
-                idEstatus: 3
-            }
-        ]);
+        mockGetPendientes.mockResolvedValueOnce({
+            content: [
+                {
+                    ...mockSolicitud,
+                    idEstatus: 3
+                }
+            ],
+            totalPages: 1
+        });
 
         renderPage();
 
